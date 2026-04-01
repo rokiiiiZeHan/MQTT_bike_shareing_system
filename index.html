@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Bike Tracker</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <style>
+    body { margin:0; padding:0; }
+    #map { height: 100vh; }
+    .status {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background-color: white;
+      padding: 5px 10px;
+      border-radius: 8px;
+      box-shadow: 0 0 5px rgba(0,0,0,0.5);
+      z-index: 999;
+      font-family: sans-serif;
+    }
+  </style>
+</head>
+<body>
+  <div class="status" id="status">Status: ---</div>
+  <div id="map"></div>
+
+  <!-- Leaflet -->
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <!-- Socket.IO -->
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+
+  <script>
+    const latRef = -22.2572774;
+    const lonRef = -45.6963601;
+    const safeRadius = 500;
+
+    const map = L.map('map').setView([latRef, lonRef], 17);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+    }).addTo(map);
+
+    const safeZone = L.circle([latRef, lonRef], {
+      color: 'green',
+      fillColor: '#3f3',
+      fillOpacity: 0.2,
+      radius: safeRadius
+    }).addTo(map);
+
+    const bikeIcon = L.icon({
+      iconUrl: '/static/bike.png',
+      iconSize: [40, 40],
+      iconAnchor: [20, 40],
+      popupAnchor: [0, -40]
+    });
+
+    const marker = L.marker([latRef, lonRef], { icon: bikeIcon }).addTo(map);
+
+    const statusDiv = document.getElementById('status');
+
+    const socket = io();
+
+    socket.on('connect', () => {
+      console.log('Conectado ao Socket.IO');
+    });
+
+    socket.on('location_update', (data) => {
+      console.log('Atualização recebida:', data);
+
+      marker.setLatLng([data.lat, data.lon]);
+      map.panTo([data.lat, data.lon]);
+
+      statusDiv.innerText = 'Status: ' + data.status.toUpperCase();
+      statusDiv.style.backgroundColor = data.status === 'safe' ? 'lightgreen' : 'tomato';
+    });
+  </script>
+</body>
+</html>
