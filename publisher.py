@@ -11,22 +11,22 @@ PORT = 1883
 BIKES = [
     {
         "bike_id": "B001",
-        "lat": -22.2572774,
-        "lon": -45.6963601,
-        "battery": 100,  # ← 初始电量
-        "lock": "locked"  # ← 也可以加锁状态
+        "lat": 18.402239,
+        "lon": 110.014757,
+        "battery": 100,
+        "lock": "unlocked"
     },
     {
         "bike_id": "B002",
-        "lat": -22.2600000,
-        "lon": -45.6980000,
+        "lat": 18.405000,
+        "lon": 110.016000,
         "battery": 95,
         "lock": "locked"
     },
     {
         "bike_id": "B003",
-        "lat": -22.2550000,
-        "lon": -45.6940000,
+        "lat": 18.400000,
+        "lon": 110.012000,
         "battery": 88,
         "lock": "unlocked"
     },

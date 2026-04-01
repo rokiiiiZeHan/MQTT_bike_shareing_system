@@ -30,28 +30,28 @@ TOPIC_BATTERY = "bike/{bike_id}/battery"
 TOPIC_LOCK = "bike/{bike_id}/lock"
 TOPIC_VIOLATION = "bike/{bike_id}/violation"
 
-LEGAL_ZONES = [#define Legal area
+LEGAL_ZONES = [
     {
         "zone_id": "zone_1",
-        "name": "Main Station",
-        "lat": -22.2572774,
-        "lon": -45.6963601,
-        "radius_km": 0.5
+        "name": "Lian Port",
+        "lat": 18.402239,  # 陵水黎安港纬度
+        "lon": 110.014757,  # 陵水黎安港经度
+        "radius_km": 0.05
     },
     {
         "zone_id": "zone_2",
-        "name": "Shopping Mall",
-        "lat": -22.2600000,
-        "lon": -45.6980000,
-        "radius_km": 0.3
+        "name": "Li'an Town Government",
+        "lat": 18.405000,
+        "lon": 110.016000,
+        "radius_km": 0.04
     },
     {
         "zone_id": "zone_3",
-        "name": "Park Entrance",
-        "lat": -22.2550000,
-        "lon": -45.6940000,
-        "radius_km": 0.4
-    }
+        "name": "Li'an Central Primary School",
+        "lat": 18.400000,
+        "lon": 110.012000,
+        "radius_km": 0.04
+    },
 ]
 
 #Multi-vehicle status management
@@ -106,8 +106,8 @@ def on_message(client, userdata, msg):
         if bike_id not in bikes:
             bikes[bike_id] = {
                 "bike_id": bike_id,
-                "lat": -22.2572774,
-                "lon": -45.6963601,
+                "lat": 18.402239,
+                "lon": 110.014757,
                 "status": "safe",
                 "battery": 100,
                 "lock": "locked",
@@ -175,6 +175,10 @@ async def home(request: Request):
 async def get_all_bikes():
     """Get all bicycle statuses"""
     return {"bikes": list(bikes.values())}
+@app.get("/api/zones")
+async def get_zones():
+    """Obtain legal parking areas"""
+    return {"zones": LEGAL_ZONES}
 
 # === Start MQTT Thread ===
 threading.Thread(target=mqtt_thread, daemon=True).start()

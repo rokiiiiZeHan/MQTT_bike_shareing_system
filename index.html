@@ -2,78 +2,164 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Bike Tracker</title>
+  <title>Shared Bike Tracker - Lingshui Li'an</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <style>
-    body { margin:0; padding:0; }
-    #map { height: 100vh; }
-    .status {
-      position: absolute;
-      top: 10px;
-      left: 50%;
-      transform: translateX(-50%);
-      background-color: white;
-      padding: 5px 10px;
-      border-radius: 8px;
-      box-shadow: 0 0 5px rgba(0,0,0,0.5);
-      z-index: 999;
-      font-family: sans-serif;
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    #map {
+      height: 100vh;
+      width: 100%;
     }
   </style>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 </head>
 <body>
-  <div class="status" id="status">Status: ---</div>
   <div id="map"></div>
 
-  <!-- Leaflet -->
+  <!-- Leaflet & Socket.IO -->
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <!-- Socket.IO -->
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 
   <script>
-    const latRef = -22.2572774;
-    const lonRef = -45.6963601;
-    const safeRadius = 500;
+    let map;
+    let bikeMarkers = {};      // 存储所有单车标记 { bike_id: marker }
+    let bikesData = {};        // 存储所有单车数据 { bike_id: bike_info }
+    let legalZones = [];       // 存储合法区域数据（从后端获取）
 
-    const map = L.map('map').setView([latRef, lonRef], 17);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-    }).addTo(map);
+    function initMap() {
+      const centerLat = 18.402239;
+      const centerLon = 110.014757;
 
-    const safeZone = L.circle([latRef, lonRef], {
-      color: 'green',
-      fillColor: '#3f3',
-      fillOpacity: 0.2,
-      radius: safeRadius
-    }).addTo(map);
+      map = L.map('map').setView([centerLat, centerLon], 16);
 
-    const bikeIcon = L.icon({
-      iconUrl: '/static/bike.png',
-      iconSize: [40, 40],
-      iconAnchor: [20, 40],
-      popupAnchor: [0, -40]
-    });
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '© OpenStreetMap contributors'
+      }).addTo(map);
+    }
 
-    const marker = L.marker([latRef, lonRef], { icon: bikeIcon }).addTo(map);
+    async function fetchAndDrawZones() {
+      try {
+        const response = await fetch('/api/zones');
+        const data = await response.json();
+        legalZones = data.zones;
 
-    const statusDiv = document.getElementById('status');
+        console.log('获取到合法区域:', legalZones);
 
-    const socket = io();
+        legalZones.forEach(zone => {
+          L.circle([zone.lat, zone.lon], {
+            color: 'green',
+            fillColor: '#3f3',
+            fillOpacity: 0.2,
+            radius: zone.radius_km * 1000,
+            weight: 2,
+            opacity: 0.8
+          }).addTo(map);
+        });
 
-    socket.on('connect', () => {
-      console.log('Conectado ao Socket.IO');
-    });
+      } catch (error) {
+        console.error('Failed to obtain a valid region:', error);
+      }
+    }
 
-    socket.on('location_update', (data) => {
-      console.log('Atualização recebida:', data);
+    function createBikeIcon(bikeId) {
+      return L.divIcon({
+        className: 'custom-bike-icon',
+        html: `
+          <div style="position: relative; display: inline-block;">
+            <img src="/static/bike.png" style="width: 40px; height: 40px;">
+            <div style="
+              position: absolute;
+              bottom: -15px;
+              left: 50%;
+              transform: translateX(-50%);
+              background: rgba(0,0,0,0.7);
+              color: white;
+              font-size: 10px;
+              font-weight: bold;
+              padding: 2px 5px;
+              border-radius: 10px;
+            ">
+              ${bikeId}
+            </div>
+          </div>
+        `,
+        iconSize: [40, 40],
+        iconAnchor: [20, 40],
+        popupAnchor: [0, -40]
+      });
+    }
 
-      marker.setLatLng([data.lat, data.lon]);
-      map.panTo([data.lat, data.lon]);
+    function updateBikeMarker(bikeId, bikeData) {
+      const icon = createBikeIcon(bikeId);
 
-      statusDiv.innerText = 'Status: ' + data.status.toUpperCase();
-      statusDiv.style.backgroundColor = data.status === 'safe' ? 'lightgreen' : 'tomato';
-    });
+      if (bikeMarkers[bikeId]) {
+        bikeMarkers[bikeId].setLatLng([bikeData.lat, bikeData.lon]);
+      } else {
+        const marker = L.marker([bikeData.lat, bikeData.lon], { icon: icon }).addTo(map);
+        bikeMarkers[bikeId] = marker;
+      }
+    }
+
+    function initSocket() {
+      const socket = io();
+
+      socket.on('connect', () => {
+        console.log('Conectado ao Socket.IO');
+      });
+
+      socket.on('location_update', (data) => {
+        console.log('Received bike update:', data);
+
+        bikesData[data.bike_id] = {
+          bike_id: data.bike_id,
+          lat: data.lat,
+          lon: data.lon,
+          status: data.status,
+          battery: data.battery,
+          lock: data.lock,
+          zone: data.zone,
+          last_update: data.last_update
+        };
+
+        updateBikeMarker(data.bike_id, bikesData[data.bike_id]);
+      });
+    }
+
+    async function fetchInitialBikes() {
+      try {
+        const response = await fetch('/api/bikes');
+        const data = await response.json();
+
+        console.log('Obtained the initial bicycle data:', data);
+
+        for (const bike of data.bikes) {
+          bikesData[bike.bike_id] = bike;
+          updateBikeMarker(bike.bike_id, bike);
+        }
+      } catch (error) {
+        console.error('Failed to obtain initial bicycle data:', error);
+      }
+    }
+
+    async function init() {
+      initMap();
+      await fetchAndDrawZones();
+      await fetchInitialBikes();
+      initSocket();
+    }
+
+    init();
   </script>
 </body>
 </html>
