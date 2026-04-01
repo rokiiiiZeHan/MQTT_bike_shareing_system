@@ -57,6 +57,10 @@ LEGAL_ZONES = [
 #Multi-vehicle status management
 bikes: Dict[str, dict] = {}##############################
 
+# Violation record
+violations: List[dict] = []
+
+
 loop = asyncio.get_event_loop()
 
 def haversine(lat1, lon1, lat2, lon2):
@@ -80,6 +84,84 @@ def check_legal_parking(lat, lon):
         if distance <= zone["radius_km"]:
             return True, zone["zone_id"], zone["name"]
     return False, None, None
+
+
+def check_violation(bike_id):
+    """检查违规并记录"""
+    bike = bikes.get(bike_id)
+    if not bike:
+        return
+
+    now = datetime.now()
+    is_legal = bike["status"] == "safe"
+    is_locked = bike["lock"] == "locked"
+
+    # 如果车辆在非法区域，开始计时
+    if is_locked and not is_legal:
+        if bike["violation_start_time"] is None:
+            bike["violation_start_time"] = now
+            bike["violation_warning_sent"] = False
+        else:
+            # 计算违规时长
+            violation_duration = (now - bike["violation_start_time"]).seconds / 60  # 分钟
+
+            # 5分钟后发送警告
+            if violation_duration >= 5 and not bike["violation_warning_sent"]:
+                violation_record = {
+                    "bike_id": bike_id,
+                    "type": "warning",
+                    "message": f"Bike {bike_id} has been parked illegally for {violation_duration:.0f} minutes",
+                    "timestamp": now.isoformat(),
+                    "location": {"lat": bike["lat"], "lon": bike["lon"]}
+                }
+                violations.append(violation_record)
+                bike["violation_warning_sent"] = True
+
+                # 发送违规通知到MQTT
+                asyncio.run_coroutine_threadsafe(
+                    publish_violation(bike_id, violation_record),
+                    loop
+                )
+
+            # 10分钟后记录严重违规
+            if violation_duration >= 10:
+                violation_record = {
+                    "bike_id": bike_id,
+                    "type": "severe",
+                    "message": f"BIKE {bike_id} SEVERE VIOLATION: Illegal parking for {violation_duration:.0f} minutes",
+                    "timestamp": now.isoformat(),
+                    "location": {"lat": bike["lat"], "lon": bike["lon"]}
+                }
+                violations.append(violation_record)
+
+                # 只记录一次严重违规
+                if not bike.get("severe_violation_recorded"):
+                    bike["severe_violation_recorded"] = True
+                    asyncio.run_coroutine_threadsafe(
+                        publish_violation(bike_id, violation_record),
+                        loop
+                    )
+    else:
+        # 车辆回到安全区域，重置违规计时
+        if bike["violation_start_time"] is not None:
+            violation_duration = (now - bike["violation_start_time"]).seconds / 60
+            if violation_duration > 0:
+                print(f"[INFO] Bike {bike_id} returned to legal zone after {violation_duration:.0f} minutes")
+            bike["violation_start_time"] = None
+            bike["violation_warning_sent"] = False
+            bike["severe_violation_recorded"] = False
+
+
+async def publish_violation(bike_id, violation):
+    """Publish illegal information to MQTT"""
+    client = mqtt.Client(client_id="ViolationPublisher", protocol=mqtt.MQTTv5)
+    try:
+        client.connect(BROKER, PORT, 60)
+        topic = TOPIC_VIOLATION.format(bike_id=bike_id)
+        client.publish(topic, json.dumps(violation))
+        client.disconnect()
+    except Exception as e:
+        print(f"Error publishing violation: {e}")
 
 
 # === MQTT Callbacks ===
@@ -126,14 +208,22 @@ def on_message(client, userdata, msg):
                 bikes[bike_id]["lat"],
                 bikes[bike_id]["lon"]
             )
+
             old_status = bikes[bike_id]["status"]
             bikes[bike_id]["status"] = "safe" if is_legal else "out_of_zone"
             bikes[bike_id]["current_zone"] = zone_name
 
+            # Check for violations
+            check_violation(bike_id)
+
             print(f"[MQTT] Bike {bike_id} - Location: ({bikes[bike_id]['lat']:.6f}, {bikes[bike_id]['lon']:.6f}) - Status: {bikes[bike_id]['status']} - Zone: {zone_name}")
+
         elif message_type == "battery":
             bikes[bike_id]["battery"] = payload.get("battery", bikes[bike_id]["battery"])
             print(f"[MQTT] Bike {bike_id} - Battery: {bikes[bike_id]['battery']}%")
+            if bikes[bike_id]["battery"] < 20:
+                print(f"[WARNING] Bike {bike_id} battery low: {bikes[bike_id]['battery']}%")
+
         elif message_type == "lock":
             bikes[bike_id]["lock"] = payload.get("lock_state", bikes[bike_id]["lock"])
             print(f"[MQTT] Bike {bike_id} - Lock: {bikes[bike_id]['lock']}")
@@ -153,6 +243,19 @@ def on_message(client, userdata, msg):
             }),
             loop
         )
+
+        if bikes[bike_id].get("violation_start_time") and bikes[bike_id]["status"] == "out_of_zone":
+            violation_duration = (datetime.now() - datetime.fromisoformat(
+                bikes[bike_id]["violation_start_time"])).seconds / 60
+            if violation_duration >= 5:
+                asyncio.run_coroutine_threadsafe(
+                    sio.emit("violation_alert", {
+                        "bike_id": bike_id,
+                        "duration_minutes": int(violation_duration),
+                        "location": {"lat": bikes[bike_id]["lat"], "lon": bikes[bike_id]["lon"]}
+                    }),
+                    loop
+                )
 
     except Exception as e:
         print(f"Error processing MQTT message: {e}")
@@ -175,6 +278,10 @@ async def home(request: Request):
 async def get_all_bikes():
     """Get all bicycle statuses"""
     return {"bikes": list(bikes.values())}
+@app.get("/api/violations")
+async def get_violations():
+    """Get violation records"""
+    return {"violations": violations[-50:]}
 @app.get("/api/zones")
 async def get_zones():
     """Obtain legal parking areas"""
