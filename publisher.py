@@ -1,56 +1,99 @@
-import paho.mqtt.client as mqtt 
+import paho.mqtt.client as mqtt
 import random
 import math
 import time
 import json
+from datetime import datetime
 
-BROKER = "test.mosquitto.org"
+BROKER = "localhost"
 PORT = 1883
-TOPIC_UPDATE = "bike/gps/update/cuh405_demo_2026"
 
-lat_ref = 18.4022396560773
-lon_ref = 110.01475702107639
-safe_radius_km = 0.5
+BIKES = [
+    {
+        "bike_id": "B001",
+        "lat": -22.2572774,
+        "lon": -45.6963601,
+        "battery": 100,  # ← 初始电量
+        "lock": "locked"  # ← 也可以加锁状态
+    },
+    {
+        "bike_id": "B002",
+        "lat": -22.2600000,
+        "lon": -45.6980000,
+        "battery": 95,
+        "lock": "locked"
+    },
+    {
+        "bike_id": "B003",
+        "lat": -22.2550000,
+        "lon": -45.6940000,
+        "battery": 88,
+        "lock": "unlocked"
+    },
+]#######################待会改成数据库
 
-lat = lat_ref
-lon = lon_ref
 
-client = mqtt.Client(client_id="BikePublisher", protocol=mqtt.MQTTv5)
+client = mqtt.Client(client_id="MultiBikePublisher", protocol=mqtt.MQTTv5)
 client.connect(BROKER, PORT)
 client.loop_start()
 
-
-def haversine(lat1, lon1, lat2, lon2):
-    R = 6371
-    dlat = math.radians(lat2 - lat1)
-    dlon = math.radians(lon2 - lon1)
-    a = (
-        math.sin(dlat / 2) ** 2
-        + math.cos(math.radians(lat1))
-        * math.cos(math.radians(lat2))
-        * math.sin(dlon / 2) ** 2
-    )
-    c = 2 * math.asin(math.sqrt(a))
-    return R * c
-
+print("Starting multi-bike simulation...")
+print("="*60)
 
 try:
     while True:
-        lat += random.uniform(-0.0005, 0.0005)
-        lon += random.uniform(-0.0005, 0.0005)
+        for bike in BIKES:
+            # Move a short distance randomly
+            if bike["lock"] == "unlocked":
+                bike["lat"] += random.uniform(-0.0003, 0.0003)
+                bike["lon"] += random.uniform(-0.0003, 0.0003)
+                #Simulated Battery Consumption
+                bike["battery"] = max(0, bike["battery"] - random.uniform(0.1, 0.5))
+            else:
+                bike["battery"] = max(0, bike["battery"] - random.uniform(0.01, 0.05))
+            battery = int(bike["battery"])
+            lock_state = bike["lock"]
 
-        distance = haversine(lat, lon, lat_ref, lon_ref)
-        status = "safe" if distance <= safe_radius_km else "out_of_zone"
+            # Simulate car lock status
+            if random.random() < 0.05:
+                if bike["lock"] == "locked":
+                    bike["lock"] = "unlocked"
+                    print(f"[Bike {bike['bike_id']}] Unlocked, ready to move")
+                else:
+                    bike["lock"] = "locked"
+                    print(f"[Bike {bike['bike_id']}] Locked")
 
-        payload = json.dumps({"lat": lat, "lon": lon, "status": status})
+            gps_payload = {
+                "bike_id": bike["bike_id"],
+                "lat": bike["lat"],
+                "lon": bike["lon"],
+                "timestamp": datetime.now().isoformat()
+            }
 
-        client.publish(TOPIC_UPDATE, payload)
+            battery_payload = {
+                "bike_id": bike["bike_id"],
+                "battery": battery,
+                "timestamp": datetime.now().isoformat()
+            }
 
-        print(f"Publishing -> {payload}")
+            lock_payload = {
+                "bike_id": bike["bike_id"],
+                "lock_state": lock_state,
+                "timestamp": datetime.now().isoformat()
+            }
 
+            client.publish(f"bike/{bike['bike_id']}/gps", json.dumps(gps_payload))
+            client.publish(f"bike/{bike['bike_id']}/battery", json.dumps(battery_payload))
+            client.publish(f"bike/{bike['bike_id']}/lock", json.dumps(lock_payload))
+
+            print(f"[PUB] Bike {bike['bike_id']} - "
+                  f"Pos: ({bike['lat']:.6f}, {bike['lon']:.6f}) - "
+                  f"Battery: {battery}% - Lock: {lock_state}")
+
+        print("-" * 60)
         time.sleep(3)
 
 except KeyboardInterrupt:
-    print("Shutting down publisher...")
+    print("\nShutting down publisher...")
     client.loop_stop()
     client.disconnect()
