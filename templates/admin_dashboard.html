@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Administrator Dashboard</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #f4f7fb;
+      color: #1f2937;
+      padding: 32px 20px 48px;
+    }
+
+    .page {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .page-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .header-copy {
+      flex: 1;
+    }
+
+    .page-title {
+      font-size: 32px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .page-subtitle {
+      color: #6b7280;
+      font-size: 15px;
+    }
+
+    .logout-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 10px 16px;
+      border-radius: 10px;
+      background: #1f2937;
+      color: #ffffff;
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .logout-link:hover {
+      background: #111827;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .stat-card,
+    .table-card {
+      background: #ffffff;
+      border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+    }
+
+    .stat-card {
+      padding: 18px 20px;
+    }
+
+    .stat-label {
+      color: #6b7280;
+      font-size: 14px;
+      margin-bottom: 8px;
+    }
+
+    .stat-value {
+      font-size: 28px;
+      font-weight: 700;
+    }
+
+    .table-card {
+      padding: 20px;
+      margin-bottom: 20px;
+      overflow-x: auto;
+    }
+
+    .section-title {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 16px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 700px;
+    }
+
+    th,
+    td {
+      text-align: left;
+      padding: 12px 10px;
+      border-bottom: 1px solid #e5e7eb;
+      font-size: 14px;
+      vertical-align: top;
+    }
+
+    th {
+      color: #374151;
+      background: #f9fafb;
+      font-weight: 700;
+    }
+
+    td {
+      color: #4b5563;
+    }
+
+    .empty-row td {
+      text-align: center;
+      color: #9ca3af;
+      padding: 18px 10px;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      background: #e5e7eb;
+      color: #374151;
+    }
+
+    .badge.safe {
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    .badge.out-of-zone,
+    .badge.severe {
+      background: #fee2e2;
+      color: #b91c1c;
+    }
+
+    .badge.warning {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    @media (max-width: 768px) {
+      body {
+        padding: 20px 12px 32px;
+      }
+
+      .page-header {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .page-title {
+        font-size: 28px;
+      }
+
+      .table-card {
+        padding: 16px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="page-header">
+      <div class="header-copy">
+        <h1 class="page-title">Administrator Dashboard</h1>
+        <p class="page-subtitle">Overview of current bike status and recent violation history.</p>
+      </div>
+      <a href="/admin/logout" class="logout-link">Logout</a>
+    </header>
+
+    <section class="stats">
+      <div class="stat-card">
+        <div class="stat-label">Total Bikes</div>
+        <div class="stat-value">{{ bikes|length }}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Out of Zone</div>
+        <div class="stat-value">{{ bikes|selectattr("status", "equalto", "out_of_zone")|list|length }}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Low Battery</div>
+        <div class="stat-value">{{ bikes|selectattr("battery", "lt", 20)|list|length }}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Recent Violations</div>
+        <div class="stat-value">{{ violations|length }}</div>
+      </div>
+    </section>
+
+    <section class="table-card">
+      <h2 class="section-title">Current Bike Status</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Bike ID</th>
+            <th>Status</th>
+            <th>Battery</th>
+            <th>Lock</th>
+            <th>Current Zone</th>
+            <th>Last Update</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for bike in bikes %}
+          <tr>
+            <td>{{ bike.bike_id }}</td>
+            <td>
+              <span class="badge {% if bike.status == 'safe' %}safe{% else %}out-of-zone{% endif %}">
+                {{ bike.status }}
+              </span>
+            </td>
+            <td>{{ bike.battery }}%</td>
+            <td>{{ bike.lock }}</td>
+            <td>{{ bike.current_zone or "-" }}</td>
+            <td>{{ bike.last_update }}</td>
+          </tr>
+          {% else %}
+          <tr class="empty-row">
+            <td colspan="6">No bike records available.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    <section class="table-card">
+      <h2 class="section-title">Recent Violations</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Bike ID</th>
+            <th>Type</th>
+            <th>Message</th>
+            <th>Timestamp</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for violation in violations %}
+          <tr>
+            <td>{{ violation.bike_id }}</td>
+            <td>
+              <span class="badge {% if violation.type == 'warning' %}warning{% else %}severe{% endif %}">
+                {{ violation.type }}
+              </span>
+            </td>
+            <td>{{ violation.message }}</td>
+            <td>{{ violation.timestamp }}</td>
+          </tr>
+          {% else %}
+          <tr class="empty-row">
+            <td colspan="4">No violation records available.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+  </div>
+</body>
+</html>

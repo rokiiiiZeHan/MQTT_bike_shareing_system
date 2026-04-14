@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Administrator Login</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(180deg, #f7f9fc 0%, #edf2f7 100%);
+      color: #1f2937;
+    }
+
+    .login-card {
+      width: 100%;
+      max-width: 420px;
+      background: #ffffff;
+      border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+      padding: 32px 28px;
+    }
+
+    .login-title {
+      font-size: 28px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      text-align: center;
+    }
+
+    .login-subtitle {
+      text-align: center;
+      color: #6b7280;
+      margin-bottom: 24px;
+      font-size: 14px;
+    }
+
+    .error-message {
+      min-height: 20px;
+      margin-bottom: 16px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: #fee2e2;
+      color: #b91c1c;
+      font-size: 14px;
+    }
+
+    .error-message.empty {
+      visibility: hidden;
+      background: transparent;
+      padding: 0;
+      margin-bottom: 12px;
+    }
+
+    .field {
+      margin-bottom: 18px;
+    }
+
+    .field label {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #374151;
+    }
+
+    .field input {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1px solid #d1d5db;
+      border-radius: 10px;
+      font-size: 15px;
+      outline: none;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .field input:focus {
+      border-color: #000000;
+      box-shadow: 0 0 0 3px rgba(65, 70, 82, 0.12);
+    }
+
+    .login-button {
+      width: 100%;
+      border: none;
+      border-radius: 10px;
+      padding: 12px 16px;
+      background: #000000;
+      color: #ffffff;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .login-button:hover {
+      background: #12275f;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-card">
+    <h1 class="login-title">Administrator Login</h1>
+    <p class="login-subtitle">Sign in to access administrative functions.</p>
+
+    <form method="post" action="/admin/login">
+      {% if error %}
+      <div class="error-message">{{ error }}</div>
+      {% else %}
+      <div class="error-message empty"></div>
+      {% endif %}
+
+      <div class="field">
+        <label for="username">Username</label>
+        <input id="username" name="username" type="text" placeholder="Enter username" required>
+      </div>
+
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" placeholder="Enter password" required>
+      </div>
+
+      <button type="submit" class="login-button">Login</button>
+    </form>
+  </div>
+</body>
+</html>

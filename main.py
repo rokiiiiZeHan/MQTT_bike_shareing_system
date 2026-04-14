@@ -3,18 +3,29 @@ import json
 import math
 from datetime import datetime, timedelta
 from typing import Dict, List
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Form, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
 
 import socketio
 import threading
 import paho.mqtt.client as mqtt
+from database import (
+    fetch_all_bikes,
+    fetch_admin_by_username,
+    fetch_recent_violations,
+    init_db,
+    insert_violation,
+    upsert_bike,
+)
 
 # === Wrapper Socket.IO and FastAPI ===
 sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
 app = FastAPI()
+# Production should use a strong secret key.
+app.add_middleware(SessionMiddleware, secret_key="admin-demo-secret-key")
 socket_app = socketio.ASGIApp(sio, other_asgi_app=app)
 
 # === Frontend ===
@@ -62,6 +73,17 @@ violations: List[dict] = []
 
 
 loop = asyncio.get_event_loop()
+
+
+def verify_admin_credentials(username, password):
+    """Validate admin credentials using a plain-text password check for now."""
+    admin = fetch_admin_by_username(username)
+    if not admin:
+        return False
+
+    # Prototype only: production should use hashed passwords.
+    return password == admin["password_hash"]
+
 
 def haversine(lat1, lon1, lat2, lon2):
     """Calculate the distance between two points"""
@@ -115,6 +137,7 @@ def check_violation(bike_id):
                     "location": {"lat": bike["lat"], "lon": bike["lon"]}
                 }
                 violations.append(violation_record)
+                insert_violation(violation_record)
                 bike["violation_warning_sent"] = True
 
                 # 发送违规通知到MQTT
@@ -133,6 +156,7 @@ def check_violation(bike_id):
                     "location": {"lat": bike["lat"], "lon": bike["lon"]}
                 }
                 violations.append(violation_record)
+                insert_violation(violation_record)
 
                 # 只记录一次严重违规
                 if not bike.get("severe_violation_recorded"):
@@ -230,6 +254,19 @@ def on_message(client, userdata, msg):
 
         bikes[bike_id]["last_update"] = datetime.now().isoformat()#################
 
+        upsert_bike(
+            {
+                "bike_id": bikes[bike_id]["bike_id"],
+                "lat": bikes[bike_id]["lat"],
+                "lon": bikes[bike_id]["lon"],
+                "status": bikes[bike_id]["status"],
+                "battery": bikes[bike_id]["battery"],
+                "lock": bikes[bike_id]["lock"],
+                "current_zone": bikes[bike_id]["current_zone"],
+                "last_update": bikes[bike_id]["last_update"],
+            }
+        )
+
         asyncio.run_coroutine_threadsafe(
             sio.emit("location_update", {
                 "bike_id": bike_id,
@@ -274,18 +311,69 @@ def mqtt_thread():
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
+
+
+@app.get("/admin/login", response_class=HTMLResponse)
+async def admin_login(request: Request):
+    return templates.TemplateResponse(
+        "admin_login.html",
+        {"request": request, "error": None},
+    )
+
+
+@app.post("/admin/login", response_class=HTMLResponse)
+async def admin_login_submit(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+):
+    if not verify_admin_credentials(username, password):
+        return templates.TemplateResponse(
+            "admin_login.html",
+            {"request": request, "error": "Invalid username or password"},
+        )
+
+    request.session["admin_user"] = username
+    # Next step: add a proper logout flow and tighten session handling.
+    return RedirectResponse(url="/admin/dashboard", status_code=303)
+
+
+@app.get("/admin/dashboard", response_class=HTMLResponse)
+async def admin_dashboard(request: Request):
+    if "admin_user" not in request.session:
+        return RedirectResponse(url="/admin/login", status_code=303)
+
+    return templates.TemplateResponse(
+        "admin_dashboard.html",
+        {
+            "request": request,
+            "bikes": fetch_all_bikes(),
+            "violations": fetch_recent_violations(50),
+        },
+    )
+
+
+@app.get("/admin/logout")
+async def admin_logout(request: Request):
+    request.session.pop("admin_user", None)
+    return RedirectResponse(url="/admin/login", status_code=303)
+
+
 @app.get("/api/bikes")
 async def get_all_bikes():
     """Get all bicycle statuses"""
-    return {"bikes": list(bikes.values())}
+    return {"bikes": fetch_all_bikes()}
 @app.get("/api/violations")
 async def get_violations():
     """Get violation records"""
-    return {"violations": violations[-50:]}
+    return {"violations": fetch_recent_violations(50)}
 @app.get("/api/zones")
 async def get_zones():
     """Obtain legal parking areas"""
     return {"zones": LEGAL_ZONES}
+
+# === Initialize Database ===
+init_db()
 
 # === Start MQTT Thread ===
 threading.Thread(target=mqtt_thread, daemon=True).start()
