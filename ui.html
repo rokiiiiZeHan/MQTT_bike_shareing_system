@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>GoRide - Shared Bikes</title>
+    <!-- Leaflet CSS + JS (Free map, no API key needed) -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Font Awesome 6 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f5f5f5;
+            overflow-x: hidden;
+        }
+
+        /* Page container */
+        .page {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #fff;
+            overflow-y: auto;
+            z-index: 10;
+        }
+
+        .page.active {
+            display: block;
+        }
+
+        /* Login Page Specific */
+        .login-container {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100%;
+            background: linear-gradient(135deg, #07c160 0%, #0ba34a 100%);
+            padding: 32px 24px;
+        }
+
+        .login-card {
+            background: white;
+            border-radius: 40px;
+            padding: 40px 28px;
+            width: 100%;
+            max-width: 340px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+            text-align: center;
+        }
+
+        .logo-icon {
+            font-size: 56px;
+            color: #07c160;
+            margin-bottom: 16px;
+        }
+
+        .app-title {
+            font-size: 28px;
+            font-weight: 700;
+            color: #1a2e1f;
+            margin-bottom: 8px;
+        }
+
+        .app-sub {
+            color: #6c757d;
+            font-size: 14px;
+            margin-bottom: 32px;
+        }
+
+        .input-group {
+            margin-bottom: 20px;
+            text-align: left;
+        }
+
+        .input-group label {
+            display: block;
+            font-size: 13px;
+            font-weight: 500;
+            color: #2c3e2f;
+            margin-bottom: 6px;
+        }
+
+        .input-field {
+            width: 100%;
+            padding: 14px 16px;
+            border: 1.5px solid #e2e8f0;
+            border-radius: 28px;
+            font-size: 16px;
+            transition: 0.2s;
+            background: #f9fafb;
+        }
+
+        .input-field:focus {
+            outline: none;
+            border-color: #07c160;
+            background: white;
+        }
+
+        .login-btn {
+            width: 100%;
+            background: #07c160;
+            color: white;
+            border: none;
+            padding: 14px;
+            border-radius: 30px;
+            font-size: 18px;
+            font-weight: bold;
+            margin-top: 16px;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .login-btn:active {
+            background: #059c4a;
+            transform: scale(0.97);
+        }
+
+        .demo-note {
+            margin-top: 20px;
+            font-size: 12px;
+            color: #8e8e93;
+        }
+
+        /* Bottom Navigation */
+        .bottom-nav {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 60px;
+            background: rgba(255,255,255,0.96);
+            backdrop-filter: blur(10px);
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            box-shadow: 0 -2px 12px rgba(0,0,0,0.08);
+            border-top: 1px solid #eee;
+            z-index: 20;
+        }
+
+        .nav-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            font-size: 12px;
+            color: #8e8e93;
+            transition: 0.2s;
+            cursor: pointer;
+            flex: 1;
+        }
+
+        .nav-item i {
+            font-size: 22px;
+        }
+
+        .nav-item.active {
+            color: #07c160;
+        }
+
+        /* Header */
+        .header {
+            padding: 12px 16px;
+            background: white;
+            border-bottom: 1px solid #f0f0f0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 15;
+            background-color: white;
+        }
+
+        .location-box {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: #f5f5f5;
+            padding: 8px 14px;
+            border-radius: 30px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .location-box i {
+            color: #07c160;
+        }
+
+        .search-icon {
+            background: #f5f5f5;
+            width: 38px;
+            height: 38px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        /* Map container */
+        #mapContainer {
+            width: 100%;
+            height: calc(100% - 60px - 56px);
+            background-color: #e9f0e9;
+            z-index: 1;
+        }
+
+        /* Action cards */
+        .action-cards {
+            position: absolute;
+            bottom: 70px;
+            left: 16px;
+            right: 16px;
+            background: white;
+            border-radius: 28px;
+            padding: 16px 20px;
+            display: flex;
+            justify-content: space-between;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            z-index: 20;
+            backdrop-filter: blur(4px);
+            background: rgba(255,255,255,0.95);
+        }
+
+        .card-item {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            color: #2c3e2f;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .card-item i {
+            font-size: 28px;
+            background: #f0f9f0;
+            padding: 12px;
+            border-radius: 50%;
+            width: 52px;
+            height: 52px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #07c160;
+        }
+
+        .card-item:active i {
+            background: #e0f0e0;
+            transform: scale(0.96);
+        }
+
+        /* Scanner page */
+        .scanner-container {
+            position: relative;
+            height: 100%;
+            background: #000;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .camera-preview {
+            width: 100%;
+            height: 70%;
+            background: #1e1e2a;
+            position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-radius: 20px;
+            margin-top: 20px;
+            overflow: hidden;
+        }
+
+        .scan-area {
+            width: 260px;
+            height: 260px;
+            border: 2px solid #07c160;
+            box-shadow: 0 0 0 2000px rgba(0,0,0,0.5);
+            border-radius: 16px;
+            position: relative;
+        }
+
+        .scan-line {
+            position: absolute;
+            width: 100%;
+            height: 4px;
+            background: #07c160;
+            top: 0;
+            animation: scan 2s infinite linear;
+        }
+
+        @keyframes scan {
+            0% { top: 0; }
+            50% { top: 100%; }
+            100% { top: 0; }
+        }
+
+        .mock-tip {
+            color: white;
+            margin-top: 30px;
+            background: rgba(0,0,0,0.6);
+            padding: 8px 20px;
+            border-radius: 30px;
+            font-size: 14px;
+        }
+
+        /* Riding panel */
+        .riding-panel {
+            background: white;
+            margin: 20px;
+            border-radius: 32px;
+            padding: 24px;
+            text-align: center;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+        }
+
+        .timer {
+            font-size: 48px;
+            font-weight: 700;
+            font-family: monospace;
+            margin: 20px 0;
+            color: #07c160;
+        }
+
+        .cost {
+            font-size: 28px;
+            margin-bottom: 30px;
+            color: #ff9500;
+        }
+
+        .lock-btn {
+            background: #ff3b30;
+            color: white;
+            border: none;
+            padding: 16px 40px;
+            border-radius: 60px;
+            font-size: 18px;
+            font-weight: bold;
+            width: 80%;
+            margin: 10px auto;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(255,59,48,0.3);
+        }
+
+        /* Orders */
+        .order-list {
+            padding: 16px;
+        }
+
+        .order-item {
+            background: white;
+            border-radius: 20px;
+            padding: 16px;
+            margin-bottom: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            border-left: 6px solid #07c160;
+        }
+
+        .order-time {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 8px;
+        }
+
+        .order-detail {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 6px;
+        }
+
+        /* Profile */
+        .profile-card {
+            background: linear-gradient(135deg, #07c160 0%, #0ba34a 100%);
+            margin: 20px;
+            border-radius: 32px;
+            padding: 24px;
+            color: white;
+        }
+
+        .balance {
+            font-size: 28px;
+            font-weight: bold;
+            margin: 8px 0;
+        }
+
+        .menu-list {
+            background: white;
+            margin: 20px;
+            border-radius: 28px;
+            overflow: hidden;
+        }
+
+        .menu-item {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 18px 20px;
+            border-bottom: 1px solid #f0f0f0;
+            cursor: pointer;
+        }
+
+        .menu-item i {
+            width: 28px;
+            font-size: 22px;
+            color: #07c160;
+        }
+
+        /* Toast */
+        .toast-message {
+            position: fixed;
+            bottom: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 8px 20px;
+            border-radius: 40px;
+            font-size: 14px;
+            z-index: 999;
+            white-space: nowrap;
+        }
+
+        .bike-icon {
+            background: none;
+            border: none;
+        }
+    </style>
+</head>
+<body>
+
+<!-- LOGIN PAGE -->
+<div id="loginPage" class="page active">
+    <div class="login-container">
+        <div class="login-card">
+            <div class="logo-icon">
+                <i class="fas fa-bicycle"></i>
+            </div>
+            <div class="app-title">GoRide</div>
+            <div class="app-sub">Shared Mobility · Hainan Lingshui</div>
+            
+            <div class="input-group">
+                <label>Phone / Email</label>
+                <input type="text" id="loginUsername" class="input-field" placeholder="e.g., rider@example.com" value="demo@goride.com">
+            </div>
+            <div class="input-group">
+                <label>Password</label>
+                <input type="password" id="loginPassword" class="input-field" placeholder="••••••" value="123456">
+            </div>
+            <button class="login-btn" id="doLoginBtn"><i class="fas fa-unlock-alt"></i> Log In</button>
+            <div class="demo-note">
+                <i class="fas fa-info-circle"></i> Demo: any credentials work
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- MAIN APP (after login) -->
+<div id="homePage" class="page">
+    <div class="header">
+        <div class="location-box" id="locationBtn">
+            <i class="fas fa-map-marker-alt"></i>
+            <span id="locationText">CUC Hainan, Lingshui</span>
+        </div>
+        <div class="search-icon" id="searchIcon">
+            <i class="fas fa-search"></i>
+        </div>
+    </div>
+    <div id="mapContainer"></div>
+    <div class="action-cards">
+        <div class="card-item" id="scanBtnHome">
+            <i class="fas fa-qrcode"></i>
+            <span>Scan</span>
+        </div>
+        <div class="card-item" id="reserveBtn">
+            <i class="fas fa-calendar-check"></i>
+            <span>Reserve</span>
+        </div>
+        <div class="card-item" id="reportBtn">
+            <i class="fas fa-tools"></i>
+            <span>Report</span>
+        </div>
+    </div>
+</div>
+
+<div id="scanPage" class="page">
+    <div class="header" style="background: #000; color: white; border: none;">
+        <i class="fas fa-arrow-left" style="font-size: 24px; cursor: pointer;" id="backFromScan"></i>
+        <span style="font-weight: 500;">Scan QR Code</span>
+        <div style="width: 24px;"></div>
+    </div>
+    <div class="scanner-container">
+        <div class="camera-preview">
+            <div class="scan-area">
+                <div class="scan-line"></div>
+            </div>
+        </div>
+        <div class="mock-tip">
+            <i class="fas fa-camera"></i> Tap to scan & unlock
+        </div>
+    </div>
+</div>
+
+<div id="ridingPage" class="page">
+    <div class="header">
+        <i class="fas fa-arrow-left" style="font-size: 24px; cursor: pointer;" id="backFromRiding"></i>
+        <span>Riding</span>
+        <div style="width: 24px;"></div>
+    </div>
+    <div class="riding-panel">
+        <i class="fas fa-bicycle" style="font-size: 48px; color: #07c160;"></i>
+        <div class="timer" id="rideTimer">00:00</div>
+        <div class="cost" id="rideCost">$0.00</div>
+        <button class="lock-btn" id="endRideBtn"><i class="fas fa-lock"></i> End Ride / Lock</button>
+        <p style="margin-top: 20px; font-size: 12px; color: gray;">Bike: GoRide · Lingshui Campus</p>
+    </div>
+</div>
+
+<div id="ordersPage" class="page">
+    <div class="header">
+        <i class="fas fa-arrow-left" style="font-size: 24px; cursor: pointer;" id="backFromOrders"></i>
+        <span>Ride History</span>
+        <div style="width: 24px;"></div>
+    </div>
+    <div class="order-list" id="orderListContainer">
+        <div style="text-align: center; padding: 40px; color: #aaa;">No rides yet</div>
+    </div>
+</div>
+
+<div id="profilePage" class="page">
+    <div class="header">
+        <span style="font-weight: bold;">Profile</span>
+        <i class="fas fa-bell" style="font-size: 22px;"></i>
+    </div>
+    <div class="profile-card">
+        <div><i class="fas fa-user-circle" style="font-size: 42px;"></i></div>
+        <div id="profileUserName">Alex Rider</div>
+        <div class="balance" id="balanceAmount">$28.50</div>
+        <div>Gold Member · Hainan</div>
+    </div>
+    <div class="menu-list">
+        <div class="menu-item" id="couponEntry">
+            <i class="fas fa-ticket-alt"></i> <span>Coupons (2 available)</span> <i class="fas fa-chevron-right" style="margin-left: auto; color:#ccc;"></i>
+        </div>
+        <div class="menu-item" id="settingsEntry">
+            <i class="fas fa-cog"></i> <span>Settings</span> <i class="fas fa-chevron-right" style="margin-left: auto; color:#ccc;"></i>
+        </div>
+        <div class="menu-item" id="serviceEntry">
+            <i class="fas fa-headset"></i> <span>Customer Service</span> <i class="fas fa-chevron-right" style="margin-left: auto; color:#ccc;"></i>
+        </div>
+        <div class="menu-item" id="logoutEntry">
+            <i class="fas fa-sign-out-alt"></i> <span>Logout</span>
+        </div>
+    </div>
+</div>
+
+<div class="bottom-nav" id="bottomNav" style="display: none;">
+    <div class="nav-item" data-page="home"><i class="fas fa-map-marked-alt"></i><span>Home</span></div>
+    <div class="nav-item" data-page="scan"><i class="fas fa-qrcode"></i><span>Scan</span></div>
+    <div class="nav-item" data-page="riding"><i class="fas fa-biking"></i><span>Ride</span></div>
+    <div class="nav-item" data-page="orders"><i class="fas fa-history"></i><span>Orders</span></div>
+    <div class="nav-item" data-page="profile"><i class="fas fa-user"></i><span>Me</span></div>
+</div>
+
+<script>
+    // ---------- GLOBAL STATE ----------
+    let currentRide = {
+        active: false,
+        startTime: null,
+        timerInterval: null,
+        currentFee: 0
+    };
+    let ordersHistory = [];
+    let userBalance = 28.5;
+    let currentUserName = "Alex Rider";
+    let map = null;
+    let markers = [];
+
+    // Hainan Lingshui - CUC coordinates
+    const CAMPUS_CENTER = [18.4235, 110.0395];
+    const mockBikePositions = [
+        { lng: 110.0382, lat: 18.4240, name: 'Teaching Bldg East' },
+        { lng: 110.0405, lat: 18.4228, name: 'Canteen' },
+        { lng: 110.0399, lat: 18.4248, name: 'Dorm Area' },
+        { lng: 110.0378, lat: 18.4225, name: 'Stadium' },
+        { lng: 110.0412, lat: 18.4239, name: 'Intl Center' },
+        { lng: 110.0388, lat: 18.4255, name: 'North Gate' },
+        { lng: 110.0400, lat: 18.4215, name: 'South Gate' }
+    ];
+
+    function showToast(msg, duration = 2000) {
+        let toast = document.querySelector('.toast-message');
+        if(toast) toast.remove();
+        let div = document.createElement('div');
+        div.className = 'toast-message';
+        div.innerText = msg;
+        document.body.appendChild(div);
+        setTimeout(() => div.remove(), duration);
+    }
+
+    function updateProfileUI() {
+        document.getElementById('balanceAmount').innerText = `$${userBalance.toFixed(2)}`;
+        document.getElementById('profileUserName').innerText = currentUserName;
+    }
+
+    function addOrderRecord(durationMin, cost, startTimeStr, endTimeStr) {
+        ordersHistory.unshift({
+            id: Date.now(),
+            startTime: startTimeStr,
+            endTime: endTimeStr,
+            duration: durationMin,
+            fee: cost,
+            date: new Date().toLocaleString()
+        });
+        renderOrdersPage();
+    }
+
+    function renderOrdersPage() {
+        const container = document.getElementById('orderListContainer');
+        if(!container) return;
+        if(ordersHistory.length === 0) {
+            container.innerHTML = '<div style="text-align: center; padding: 40px; color: #aaa;">No ride records</div>';
+            return;
+        }
+        let html = '';
+        ordersHistory.forEach(order => {
+            html += `
+                <div class="order-item">
+                    <div class="order-time">${order.date}</div>
+                    <div>Duration: ${order.duration} min  |  Fare: $${order.fee.toFixed(2)}</div>
+                    <div class="order-detail"><span>${order.startTime || 'CUC Hainan'}</span><span>→</span><span>${order.endTime || 'Lingshui'}</span></div>
+                </div>
+            `;
+        });
+        container.innerHTML = html;
+    }
+
+    function endRide() {
+        if(!currentRide.active) { showToast("No active ride"); return; }
+        if(currentRide.timerInterval) clearInterval(currentRide.timerInterval);
+        const endDate = new Date();
+        const startDate = new Date(currentRide.startTime);
+        const minutes = Math.floor((endDate - startDate) / 60000);
+        const finalCost = minutes * 0.5 + 1.0;
+        if(userBalance >= finalCost) userBalance -= finalCost;
+        else userBalance = Math.max(0, userBalance - finalCost);
+        updateProfileUI();
+        addOrderRecord(minutes, finalCost, startDate.toLocaleTimeString(), endDate.toLocaleTimeString());
+        currentRide.active = false;
+        currentRide.startTime = null;
+        document.getElementById('rideTimer').innerText = "00:00";
+        document.getElementById('rideCost').innerText = "$0.00";
+        showToast(`Ride ended. Fare: $${finalCost.toFixed(2)}`);
+        if(document.getElementById('ridingPage').classList.contains('active')) switchToPage('home');
+    }
+
+    function startRiding() {
+        if(currentRide.active) { showToast("Ride already in progress."); return; }
+        currentRide.active = true;
+        currentRide.startTime = new Date();
+        const timerEl = document.getElementById('rideTimer');
+        const costEl = document.getElementById('rideCost');
+        if(currentRide.timerInterval) clearInterval(currentRide.timerInterval);
+        currentRide.timerInterval = setInterval(() => {
+            if(!currentRide.active) return;
+            const diffSec = Math.floor((new Date() - currentRide.startTime) / 1000);
+            const minutes = Math.floor(diffSec / 60);
+            const seconds = diffSec % 60;
+            timerEl.innerText = `${minutes.toString().padStart(2,'0')}:${seconds.toString().padStart(2,'0')}`;
+            const cost = minutes * 0.5 + 1.0;
+            costEl.innerText = `$${cost.toFixed(2)}`;
+        }, 1000);
+        showToast("🔓 Unlocked! Enjoy your ride.");
+        switchToPage('riding');
+    }
+
+    function mockScanToUnlock() { if(!currentRide.active) startRiding(); else showToast("End current ride first."); }
+    function mockReserveBike() { showToast("🚲 Bike reserved nearby. Scan within 15 min."); }
+    function mockRepair() { showToast("🔧 Report submitted. Thank you!"); }
+
+    function switchToPage(pageId) {
+        const pages = ['homePage', 'scanPage', 'ridingPage', 'ordersPage', 'profilePage'];
+        pages.forEach(pid => document.getElementById(pid).classList.remove('active'));
+        document.getElementById(pageId).classList.add('active');
+        const navMap = { homePage:'home', scanPage:'scan', ridingPage:'riding', ordersPage:'orders', profilePage:'profile' };
+        const activeNav = navMap[pageId];
+        document.querySelectorAll('.nav-item').forEach(item => {
+            if(item.getAttribute('data-page') === activeNav) item.classList.add('active');
+            else item.classList.remove('active');
+        });
+        if(pageId === 'homePage' && map) setTimeout(() => map.invalidateSize(), 150);
+        if(pageId === 'ridingPage' && !currentRide.active) {
+            document.getElementById('rideTimer').innerText = "No ride";
+            document.getElementById('rideCost').innerText = "$0.00";
+        }
+    }
+
+    function initMap() {
+        map = L.map('mapContainer').setView(CAMPUS_CENTER, 17);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
+            subdomains: 'abcd'
+        }).addTo(map);
+        L.marker(CAMPUS_CENTER, {
+            icon: L.divIcon({ html: '<i class="fas fa-university" style="font-size:28px;color:#07c160;"></i>', iconSize: [32,32], className:'bike-icon' })
+        }).addTo(map).bindPopup('<b>CUC Hainan International College</b>');
+        mockBikePositions.forEach(bike => {
+            const m = L.marker([bike.lat, bike.lng], {
+                icon: L.divIcon({ html: '<i class="fas fa-bicycle" style="font-size:24px;color:#07c160;background:white;border-radius:50%;padding:4px;box-shadow:0 2px 6px rgba(0,0,0,0.2);"></i>', iconSize:[32,32], className:'bike-icon' })
+            }).addTo(map).bindPopup(`🚲 Shared Bike<br/>${bike.name}`);
+            markers.push(m);
+        });
+        document.getElementById('locationText').innerHTML = "🏫 CUC Hainan College";
+        setTimeout(() => map.invalidateSize(), 200);
+    }
+
+    function afterLogin(username) {
+        currentUserName = username || "Rider";
+        updateProfileUI();
+        document.getElementById('loginPage').classList.remove('active');
+        document.getElementById('homePage').classList.add('active');
+        document.getElementById('bottomNav').style.display = 'flex';
+        if(!map) initMap();
+        else setTimeout(() => map.invalidateSize(), 100);
+        if(ordersHistory.length === 0) {
+            ordersHistory.push({id:100, date:"Apr 10, 2025 14:20", duration:15, fee:8.5, startTime:"Teaching Building", endTime:"Dormitory Zone"});
+            ordersHistory.push({id:101, date:"Apr 9, 2025 08:45", duration:9, fee:5.5, startTime:"South Gate", endTime:"Library"});
+            renderOrdersPage();
+        }
+        showToast(`Welcome, ${currentUserName}!`);
+    }
+
+    function bindEvents() {
+        document.getElementById('doLoginBtn').addEventListener('click', () => {
+            const username = document.getElementById('loginUsername').value.trim();
+            const pwd = document.getElementById('loginPassword').value;
+            if(username === "") {
+                showToast("Please enter username/email");
+                return;
+            }
+            afterLogin(username.split('@')[0] || "Guest");
+        });
+        document.querySelectorAll('.nav-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const page = item.getAttribute('data-page');
+                if(page === 'home') switchToPage('homePage');
+                else if(page === 'scan') switchToPage('scanPage');
+                else if(page === 'riding') switchToPage('ridingPage');
+                else if(page === 'orders') switchToPage('ordersPage');
+                else if(page === 'profile') switchToPage('profilePage');
+            });
+        });
+        document.getElementById('scanBtnHome')?.addEventListener('click', () => switchToPage('scanPage'));
+        document.getElementById('reserveBtn')?.addEventListener('click', mockReserveBike);
+        document.getElementById('reportBtn')?.addEventListener('click', mockRepair);
+        document.querySelector('.scan-area')?.addEventListener('click', () => { mockScanToUnlock(); if(currentRide.active) switchToPage('ridingPage'); });
+        document.getElementById('backFromScan')?.addEventListener('click', () => switchToPage('homePage'));
+        document.getElementById('backFromRiding')?.addEventListener('click', () => switchToPage('homePage'));
+        document.getElementById('backFromOrders')?.addEventListener('click', () => switchToPage('homePage'));
+        document.getElementById('endRideBtn')?.addEventListener('click', endRide);
+        document.getElementById('couponEntry')?.addEventListener('click', () => showToast("🎟️ 2 coupons: $3 off"));
+        document.getElementById('settingsEntry')?.addEventListener('click', () => showToast("⚙️ Settings: Notifications / Privacy"));
+        document.getElementById('serviceEntry')?.addEventListener('click', () => showToast("📞 Hotline: 400-882-1234"));
+        document.getElementById('logoutEntry')?.addEventListener('click', () => {
+            if(currentRide.active) endRide();
+            document.getElementById('bottomNav').style.display = 'none';
+            document.getElementById('loginPage').classList.add('active');
+            document.getElementById('homePage').classList.remove('active');
+            document.getElementById('scanPage').classList.remove('active');
+            document.getElementById('ridingPage').classList.remove('active');
+            document.getElementById('ordersPage').classList.remove('active');
+            document.getElementById('profilePage').classList.remove('active');
+            showToast("Logged out successfully.");
+        });
+        document.getElementById('searchIcon')?.addEventListener('click', () => showToast("🔍 Search destination (demo)"));
+        document.getElementById('locationBtn')?.addEventListener('click', () => { if(map) map.setView(CAMPUS_CENTER, 17); showToast("📍 Centering on campus"); });
+    }
+
+    window.onload = () => {
+        bindEvents();
+        document.getElementById('bottomNav').style.display = 'none';
+    };
+</script>
+</body>
+</html>
