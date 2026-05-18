@@ -82,11 +82,91 @@ def init_db():
 
         cursor.execute(
             """
+            CREATE TABLE IF NOT EXISTS rides (
+                ride_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                bike_id TEXT NOT NULL,
+                start_time TEXT NOT NULL,
+                end_time TEXT,
+                duration_min INTEGER,
+                pricing_mode TEXT NOT NULL DEFAULT 'pay_as_you_go',
+                cost REAL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+            """
+        )
+        # The rides table stores user ride history and final cost.
+
+        cursor.execute(
+            """
             INSERT OR IGNORE INTO admins (username, password_hash, role, created_at)
             VALUES (?, ?, ?, ?)
             """,
             ("admin", "admin123", "super_admin", datetime.utcnow().isoformat()),
         )
+
+        default_bikes = [
+            {
+                "bike_id": "B001",
+                "lat": 18.4235,
+                "lon": 110.0395,
+                "status": "safe",
+                "battery": 100,
+                "lock": "locked",
+                "current_zone": "Teaching Building Parking Zone",
+                "last_update": datetime.utcnow().isoformat(),
+            },
+            {
+                "bike_id": "B002",
+                "lat": 18.4248,
+                "lon": 110.0399,
+                "status": "safe",
+                "battery": 100,
+                "lock": "locked",
+                "current_zone": "Dormitory Parking Zone",
+                "last_update": datetime.utcnow().isoformat(),
+            },
+            {
+                "bike_id": "B003",
+                "lat": 18.4228,
+                "lon": 110.0405,
+                "status": "safe",
+                "battery": 100,
+                "lock": "locked",
+                "current_zone": "Canteen Parking Zone",
+                "last_update": datetime.utcnow().isoformat(),
+            },
+        ]
+
+        for bike in default_bikes:
+            cursor.execute(
+                """
+                INSERT OR IGNORE INTO bikes (
+                    bike_id, lat, lon, status, battery, lock, current_zone, last_update
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                
+                ON CONFLICT(bike_id) DO UPDATE SET
+                    lat = excluded.lat,
+                    lon = excluded.lon,
+                    status = excluded.status,
+                    battery = excluded.battery,
+                    lock = excluded.lock,
+                    current_zone = excluded.current_zone,
+                    last_update = excluded.last_update
+                """,
+                (
+                    bike["bike_id"],
+                    bike["lat"],
+                    bike["lon"],
+                    bike["status"],
+                    bike["battery"],
+                    bike["lock"],
+                    bike["current_zone"],
+                    bike["last_update"],
+                ),
+            )
 
         connection.commit()
 
@@ -268,6 +348,154 @@ def update_user_balance(user_id: int, new_balance: float):
         ).fetchone()
 
     return _row_to_dict(row)
+
+
+def fetch_bike_by_id(bike_id: str):
+    """Return one bike by bike_id or None."""
+    with get_connection() as connection:
+        row = connection.execute(
+            """
+            SELECT bike_id, lat, lon, status, battery, lock, current_zone, last_update
+            FROM bikes
+            WHERE bike_id = ?
+            """,
+            (bike_id,),
+        ).fetchone()
+
+    return _row_to_dict(row)
+
+
+def update_bike_lock(bike_id: str, lock_state: str):
+    """Update bike lock state."""
+    with get_connection() as connection:
+        connection.execute(
+            """
+            UPDATE bikes
+            SET lock = ?, last_update = ?
+            WHERE bike_id = ?
+            """,
+            (lock_state, datetime.utcnow().isoformat(), bike_id),
+        )
+        connection.commit()
+
+
+def update_bike_state(bike_id: str, lat: float, lon: float, status: str,
+                      battery: int, lock_state: str, current_zone: str | None):
+    """Update bike location, status, battery and lock state."""
+    with get_connection() as connection:
+        connection.execute(
+            """
+            UPDATE bikes
+            SET lat = ?, lon = ?, status = ?, battery = ?, lock = ?,
+                current_zone = ?, last_update = ?
+            WHERE bike_id = ?
+            """,
+            (
+                lat,
+                lon,
+                status,
+                battery,
+                lock_state,
+                current_zone,
+                datetime.utcnow().isoformat(),
+                bike_id,
+            ),
+        )
+        connection.commit()
+
+def create_ride(user_id: int, bike_id: str, pricing_mode: str = "pay_as_you_go"):
+    """Create a new ride record when the user starts riding."""
+    with get_connection() as connection:
+        cursor = connection.cursor()
+        cursor.execute(
+            """
+            INSERT INTO rides (user_id, bike_id, start_time, pricing_mode, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                user_id,
+                bike_id,
+                datetime.utcnow().isoformat(),
+                pricing_mode,
+                datetime.utcnow().isoformat(),
+            ),
+        )
+        connection.commit()
+        ride_id = cursor.lastrowid
+
+        row = connection.execute(
+            """
+            SELECT ride_id, user_id, bike_id, start_time, end_time, duration_min, pricing_mode, cost
+            FROM rides
+            WHERE ride_id = ?
+            """,
+            (ride_id,),
+        ).fetchone()
+
+    return _row_to_dict(row)
+
+
+def fetch_active_ride(user_id: int):
+    """Return the latest active ride for a user."""
+    with get_connection() as connection:
+        row = connection.execute(
+            """
+            SELECT ride_id, user_id, bike_id, start_time, end_time, duration_min, pricing_mode, cost
+            FROM rides
+            WHERE user_id = ? AND end_time IS NULL
+            ORDER BY ride_id DESC
+            LIMIT 1
+            """,
+            (user_id,),
+        ).fetchone()
+
+    return _row_to_dict(row)
+
+
+def finish_ride(ride_id: int, duration_min: int, cost: float):
+    """Finish a ride and store duration and cost."""
+    with get_connection() as connection:
+        connection.execute(
+            """
+            UPDATE rides
+            SET end_time = ?, duration_min = ?, cost = ?
+            WHERE ride_id = ?
+            """,
+            (
+                datetime.utcnow().isoformat(),
+                duration_min,
+                cost,
+                ride_id,
+            ),
+        )
+        connection.commit()
+
+        row = connection.execute(
+            """
+            SELECT ride_id, user_id, bike_id, start_time, end_time, duration_min, pricing_mode, cost
+            FROM rides
+            WHERE ride_id = ?
+            """,
+            (ride_id,),
+        ).fetchone()
+
+    return _row_to_dict(row)
+
+
+def fetch_rides_by_user(user_id: int):
+    """Return ride history for one user."""
+    with get_connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT ride_id, user_id, bike_id, start_time, end_time, duration_min, pricing_mode, cost
+            FROM rides
+            WHERE user_id = ?
+            ORDER BY ride_id DESC
+            """,
+            (user_id,),
+        ).fetchall()
+
+    return [_row_to_dict(row) for row in rows]
 
 if __name__ == "__main__":
     init_db()

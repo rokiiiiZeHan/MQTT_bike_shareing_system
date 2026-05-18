@@ -1,96 +1,98 @@
-import paho.mqtt.client as mqtt
-import random
-import math
-import time
 import json
+import random
+import time
 from datetime import datetime
+
+import paho.mqtt.client as mqtt
+
+from database import fetch_all_bikes
 
 BROKER = "localhost"
 PORT = 1883
 
-BIKES = [
-    {
-        "bike_id": "B001",
-        "lat": 18.402239,
-        "lon": 110.014757,
-        "battery": 100,
-        "lock": "unlocked"
-    },
-    {
-        "bike_id": "B002",
-        "lat": 18.405000,
-        "lon": 110.016000,
-        "battery": 95,
-        "lock": "locked"
-    },
-    {
-        "bike_id": "B003",
-        "lat": 18.400000,
-        "lon": 110.012000,
-        "battery": 88,
-        "lock": "unlocked"
-    },
-]#######################待会改成数据库
-
-
-client = mqtt.Client(client_id="MultiBikePublisher", protocol=mqtt.MQTTv5)
+client = mqtt.Client(client_id="ControlledBikePublisher", protocol=mqtt.MQTTv5)
 client.connect(BROKER, PORT)
 client.loop_start()
 
-print("Starting multi-bike simulation...")
-print("="*60)
+print("Starting controlled bike simulation...")
+print("Locked bikes stay still. Unlocked bikes move and consume battery.")
+print("=" * 70)
+
+
+def update_simulated_bike(bike):
+    """
+    Only unlocked bikes move and consume battery.
+    Locked bikes remain stationary and keep the same battery level.
+    """
+    lat = float(bike["lat"])
+    lon = float(bike["lon"])
+    battery = int(bike["battery"])
+    lock_state = bike["lock"]
+
+    if lock_state == "unlocked":
+        lat += random.uniform(-0.0003, 0.0003)
+        lon += random.uniform(-0.0003, 0.0003)
+        battery = max(0, battery - random.randint(1, 2))
+
+    return {
+        "bike_id": bike["bike_id"],
+        "lat": lat,
+        "lon": lon,
+        "battery": battery,
+        "lock": lock_state,
+    }
+
 
 try:
     while True:
-        for bike in BIKES:
-            # Move a short distance randomly
-            if bike["lock"] == "unlocked":
-                bike["lat"] += random.uniform(-0.0003, 0.0003)
-                bike["lon"] += random.uniform(-0.0003, 0.0003)
-                #Simulated Battery Consumption
-                bike["battery"] = max(0, bike["battery"] - random.uniform(0.1, 0.5))
-            else:
-                bike["battery"] = max(0, bike["battery"] - random.uniform(0.01, 0.05))
-            battery = int(bike["battery"])
-            lock_state = bike["lock"]
+        bikes = fetch_all_bikes()
 
-            # Simulate car lock status
-            if random.random() < 0.05:
-                if bike["lock"] == "locked":
-                    bike["lock"] = "unlocked"
-                    print(f"[Bike {bike['bike_id']}] Unlocked, ready to move")
-                else:
-                    bike["lock"] = "locked"
-                    print(f"[Bike {bike['bike_id']}] Locked")
+        if not bikes:
+            print("[INFO] No bikes found in database. Run python database.py first.")
+
+        for bike in bikes:
+            updated_bike = update_simulated_bike(bike)
 
             gps_payload = {
-                "bike_id": bike["bike_id"],
-                "lat": bike["lat"],
-                "lon": bike["lon"],
-                "timestamp": datetime.now().isoformat()
+                "bike_id": updated_bike["bike_id"],
+                "lat": updated_bike["lat"],
+                "lon": updated_bike["lon"],
+                "timestamp": datetime.now().isoformat(),
             }
 
             battery_payload = {
-                "bike_id": bike["bike_id"],
-                "battery": battery,
-                "timestamp": datetime.now().isoformat()
+                "bike_id": updated_bike["bike_id"],
+                "battery": updated_bike["battery"],
+                "timestamp": datetime.now().isoformat(),
             }
 
             lock_payload = {
-                "bike_id": bike["bike_id"],
-                "lock_state": lock_state,
-                "timestamp": datetime.now().isoformat()
+                "bike_id": updated_bike["bike_id"],
+                "lock_state": updated_bike["lock"],
+                "timestamp": datetime.now().isoformat(),
             }
 
-            client.publish(f"bike/{bike['bike_id']}/gps", json.dumps(gps_payload))
-            client.publish(f"bike/{bike['bike_id']}/battery", json.dumps(battery_payload))
-            client.publish(f"bike/{bike['bike_id']}/lock", json.dumps(lock_payload))
+            client.publish(
+                f"bike/{updated_bike['bike_id']}/gps",
+                json.dumps(gps_payload)
+            )
+            client.publish(
+                f"bike/{updated_bike['bike_id']}/battery",
+                json.dumps(battery_payload)
+            )
+            client.publish(
+                f"bike/{updated_bike['bike_id']}/lock",
+                json.dumps(lock_payload)
+            )
 
-            print(f"[PUB] Bike {bike['bike_id']} - "
-                  f"Pos: ({bike['lat']:.6f}, {bike['lon']:.6f}) - "
-                  f"Battery: {battery}% - Lock: {lock_state}")
+            print(
+                f"[PUB] Bike {updated_bike['bike_id']} - "
+                f"Pos: ({updated_bike['lat']:.6f}, {updated_bike['lon']:.6f}) - "
+                f"Battery: {updated_bike['battery']}% - "
+                f"Lock: {updated_bike['lock']}"
+            )
 
-        print("-" * 60)
+        print("-" * 70)
         time.sleep(3)
 
 except KeyboardInterrupt:

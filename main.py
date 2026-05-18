@@ -15,12 +15,18 @@ import threading
 import paho.mqtt.client as mqtt
 from database import (
     create_or_get_user,
+    create_ride,
+    fetch_active_ride,
     fetch_all_bikes,
     fetch_admin_by_username,
+    fetch_bike_by_id,
     fetch_recent_violations,
+    fetch_rides_by_user,
     fetch_user_by_id,
+    finish_ride,
     init_db,
     insert_violation,
+    update_bike_lock,
     update_user_balance,
     upsert_bike,
 )
@@ -48,24 +54,24 @@ TOPIC_VIOLATION = "bike/{bike_id}/violation"
 LEGAL_ZONES = [
     {
         "zone_id": "zone_1",
-        "name": "Lian Port",
-        "lat": 18.402239,  # 陵水黎安港纬度
-        "lon": 110.014757,  # 陵水黎安港经度
-        "radius_km": 0.05
+        "name": "Teaching Building Parking Zone",
+        "lat": 18.4235,
+        "lon": 110.0395,
+        "radius_km": 0.06
     },
     {
         "zone_id": "zone_2",
-        "name": "Li'an Town Government",
-        "lat": 18.405000,
-        "lon": 110.016000,
-        "radius_km": 0.04
+        "name": "Dormitory Parking Zone",
+        "lat": 18.4248,
+        "lon": 110.0399,
+        "radius_km": 0.05
     },
     {
         "zone_id": "zone_3",
-        "name": "Li'an Central Primary School",
-        "lat": 18.400000,
-        "lon": 110.012000,
-        "radius_km": 0.04
+        "name": "Canteen Parking Zone",
+        "lat": 18.4228,
+        "lon": 110.0405,
+        "radius_km": 0.05
     },
 ]
 
@@ -81,6 +87,28 @@ loop = asyncio.get_event_loop()
 class UserLoginRequest(BaseModel):
     username: str
     password: str
+
+class StartRideRequest(BaseModel):
+    user_id: int
+    bike_id: str = "B001"
+    pricing_mode: str = "pay_as_you_go"
+
+class EndRideRequest(BaseModel):
+    user_id: int
+
+
+def calculate_pay_as_you_go_cost(duration_min: int) -> float:
+    """
+    Pay-as-you-go pricing:
+    First 10 minutes: $1.00
+    After 10 minutes: $0.20 per extra minute.
+    """
+    base_price = 1.00
+    included_minutes = 10
+    extra_rate_per_minute = 0.20
+
+    extra_minutes = max(0, duration_min - included_minutes)
+    return round(base_price + extra_minutes * extra_rate_per_minute, 2)
 
 
 def verify_admin_credentials(username, password):
@@ -317,6 +345,7 @@ def mqtt_thread():
 
 
 # === FastAPI Routes ===
+# 1. 用户登录相关
 @app.post("/api/user/login")
 async def user_login(data: UserLoginRequest):
     """
@@ -349,6 +378,131 @@ async def get_user(user_id: int):
     return {"user": user}
 
 
+# 2. 骑行和计费相关
+@app.post("/api/ride/start")
+async def start_ride(data: StartRideRequest):
+    """
+    Start a ride for a user.
+    Version 2 uses pay-as-you-go pricing only.
+    """
+    user = fetch_user_by_id(data.user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    active_ride = fetch_active_ride(data.user_id)
+    if active_ride:
+        raise HTTPException(status_code=400, detail="You already have an active ride")
+
+    bike = fetch_bike_by_id(data.bike_id)
+
+    # For prototype stability:
+    # If MQTT publisher has not created B001 yet, create a default demo bike.
+    if not bike:
+        upsert_bike(
+            {
+                "bike_id": data.bike_id,
+                "lat": 18.4235,
+                "lon": 110.0395,
+                "status": "safe",
+                "battery": 100,
+                "lock": "locked",
+                "current_zone": "Lingshui Campus",
+                "last_update": datetime.utcnow().isoformat(),
+            }
+        )
+        bike = fetch_bike_by_id(data.bike_id)
+
+    if bike["lock"] == "unlocked":
+        raise HTTPException(status_code=400, detail="Bike is already unlocked")
+
+    if bike["battery"] <= 10:
+        raise HTTPException(status_code=400, detail="Bike battery is too low")
+
+    if bike["status"] != "safe":
+        raise HTTPException(status_code=400, detail="Bike is not in a legal parking zone")
+
+    ride = create_ride(
+        user_id=data.user_id,
+        bike_id=data.bike_id,
+        pricing_mode=data.pricing_mode,
+    )
+
+    update_bike_lock(data.bike_id, "unlocked")
+
+    return {
+        "message": "Ride started",
+        "ride": ride,
+        "bike": fetch_bike_by_id(data.bike_id),
+    }
+
+
+@app.post("/api/ride/end")
+async def end_ride(data: EndRideRequest):
+    """
+    End the active ride, calculate final cost,
+    deduct user balance, and store order record.
+    """
+    user = fetch_user_by_id(data.user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    active_ride = fetch_active_ride(data.user_id)
+    if not active_ride:
+        raise HTTPException(status_code=404, detail="No active ride found")
+
+    start_time = datetime.fromisoformat(active_ride["start_time"])
+    end_time = datetime.utcnow()
+
+    duration_min = max(1, int((end_time - start_time).total_seconds() // 60))
+
+    ride_cost = calculate_pay_as_you_go_cost(duration_min)
+
+    bike = fetch_bike_by_id(active_ride["bike_id"])
+    relocation_fee = 0.0
+    parking_warning = None
+
+    if bike and bike["status"] == "out_of_zone":
+        relocation_fee = 5.00
+        parking_warning = "Bike parked outside legal parking zone. Relocation fee applied."
+
+    cost = round(ride_cost + relocation_fee, 2)
+
+    if user["balance"] < cost:
+        raise HTTPException(status_code=400, detail="Insufficient balance")
+
+    new_balance = round(user["balance"] - cost, 2)
+
+    finished_ride = finish_ride(
+        ride_id=active_ride["ride_id"],
+        duration_min=duration_min,
+        cost=cost,
+    )
+
+    update_user_balance(data.user_id, new_balance)
+    update_bike_lock(active_ride["bike_id"], "locked")
+
+    return {
+        "message": "Ride ended",
+        "ride": finished_ride,
+        "ride_cost": ride_cost,
+        "relocation_fee": relocation_fee,
+        "parking_warning": parking_warning,
+        "cost": cost,
+        "new_balance": new_balance,
+    }
+
+
+@app.get("/api/orders/{user_id}")
+async def get_user_orders(user_id: int):
+    """Return ride history for the user."""
+    user = fetch_user_by_id(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return {"orders": fetch_rides_by_user(user_id)}
+
+
+# 3. 页面路由
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
@@ -359,6 +513,7 @@ async def user_app(request: Request):
     return templates.TemplateResponse("user.html", {"request": request})
 
 
+# 4. 管理员路由
 @app.get("/admin/login", response_class=HTMLResponse)
 async def admin_login(request: Request):
     return templates.TemplateResponse(
@@ -405,6 +560,7 @@ async def admin_logout(request: Request):
     return RedirectResponse(url="/admin/login", status_code=303)
 
 
+# 5. 原来的车辆/违规/区域 API
 @app.get("/api/bikes")
 async def get_all_bikes():
     """Get all bicycle statuses"""
