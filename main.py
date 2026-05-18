@@ -3,7 +3,8 @@ import json
 import math
 from datetime import datetime, timedelta
 from typing import Dict, List
-from fastapi import FastAPI, Form, Request
+from fastapi import FastAPI, Form, Request, HTTPException
+from pydantic import BaseModel
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
@@ -13,11 +14,14 @@ import socketio
 import threading
 import paho.mqtt.client as mqtt
 from database import (
+    create_or_get_user,
     fetch_all_bikes,
     fetch_admin_by_username,
     fetch_recent_violations,
+    fetch_user_by_id,
     init_db,
     insert_violation,
+    update_user_balance,
     upsert_bike,
 )
 
@@ -73,6 +77,10 @@ violations: List[dict] = []
 
 
 loop = asyncio.get_event_loop()
+
+class UserLoginRequest(BaseModel):
+    username: str
+    password: str
 
 
 def verify_admin_credentials(username, password):
@@ -282,8 +290,9 @@ def on_message(client, userdata, msg):
         )
 
         if bikes[bike_id].get("violation_start_time") and bikes[bike_id]["status"] == "out_of_zone":
-            violation_duration = (datetime.now() - datetime.fromisoformat(
-                bikes[bike_id]["violation_start_time"])).seconds / 60
+            violation_duration = (
+                datetime.now() - bikes[bike_id]["violation_start_time"]
+            ).seconds / 60
             if violation_duration >= 5:
                 asyncio.run_coroutine_threadsafe(
                     sio.emit("violation_alert", {
@@ -308,9 +317,46 @@ def mqtt_thread():
 
 
 # === FastAPI Routes ===
+@app.post("/api/user/login")
+async def user_login(data: UserLoginRequest):
+    """
+    User login/register API.
+    If the username does not exist, create a new account with $50 balance.
+    If the username exists, validate the password.
+    """
+    username = data.username.strip()
+    password = data.password.strip()
+
+    if not username or not password:
+        raise HTTPException(status_code=400, detail="Username and password are required")
+
+    user = create_or_get_user(username, password)
+
+    if user is None:
+        raise HTTPException(status_code=401, detail="Invalid password")
+
+    return {"user": user}
+
+
+@app.get("/api/user/{user_id}")
+async def get_user(user_id: int):
+    """Get user profile and balance."""
+    user = fetch_user_by_id(user_id)
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return {"user": user}
+
+
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
+
+
+@app.get("/app", response_class=HTMLResponse)
+async def user_app(request: Request):
+    return templates.TemplateResponse("user.html", {"request": request})
 
 
 @app.get("/admin/login", response_class=HTMLResponse)

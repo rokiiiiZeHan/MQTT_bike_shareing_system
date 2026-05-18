@@ -68,6 +68,20 @@ def init_db():
 
         cursor.execute(
             """
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password TEXT NOT NULL,
+                balance REAL NOT NULL DEFAULT 50.0,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        # Prototype only: passwords are stored as plain text.
+        # In a production system, passwords should be hashed.
+
+        cursor.execute(
+            """
             INSERT OR IGNORE INTO admins (username, password_hash, role, created_at)
             VALUES (?, ?, ?, ?)
             """,
@@ -172,6 +186,88 @@ def fetch_admin_by_username(username):
         ).fetchone()
     return _row_to_dict(row)
 
+
+def create_or_get_user(username: str, password: str):
+    """
+    Create a new user with default balance if the username does not exist.
+    If the user exists, check whether the password matches.
+    """
+    with get_connection() as connection:
+        existing_user = connection.execute(
+            """
+            SELECT id, username, password, balance, created_at
+            FROM users
+            WHERE username = ?
+            """,
+            (username,),
+        ).fetchone()
+
+        if existing_user:
+            user = _row_to_dict(existing_user)
+            if user["password"] != password:
+                return None
+            user.pop("password", None)
+            return user
+
+        connection.execute(
+            """
+            INSERT INTO users (username, password, balance, created_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (username, password, 50.0, datetime.utcnow().isoformat()),
+        )
+        connection.commit()
+
+        new_user = connection.execute(
+            """
+            SELECT id, username, balance, created_at
+            FROM users
+            WHERE username = ?
+            """,
+            (username,),
+        ).fetchone()
+
+    return _row_to_dict(new_user)
+
+
+def fetch_user_by_id(user_id: int):
+    """Return one user by id without password."""
+    with get_connection() as connection:
+        row = connection.execute(
+            """
+            SELECT id, username, balance, created_at
+            FROM users
+            WHERE id = ?
+            """,
+            (user_id,),
+        ).fetchone()
+
+    return _row_to_dict(row)
+
+
+def update_user_balance(user_id: int, new_balance: float):
+    """Update user balance and return the updated user."""
+    with get_connection() as connection:
+        connection.execute(
+            """
+            UPDATE users
+            SET balance = ?
+            WHERE id = ?
+            """,
+            (new_balance, user_id),
+        )
+        connection.commit()
+
+        row = connection.execute(
+            """
+            SELECT id, username, balance, created_at
+            FROM users
+            WHERE id = ?
+            """,
+            (user_id,),
+        ).fetchone()
+
+    return _row_to_dict(row)
 
 if __name__ == "__main__":
     init_db()
