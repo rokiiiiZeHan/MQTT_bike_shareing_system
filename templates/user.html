@@ -591,8 +591,9 @@
         currentFee: 0
     };
     let ordersHistory = [];
-    let userBalance = 28.5;
-    let currentUserName = "Alex Rider";
+    let currentUser = null;
+    let userBalance = 50.0;
+    let currentUserName = "Guest";
     let map = null;
     let markers = [];
 
@@ -621,6 +622,26 @@
     function updateProfileUI() {
         document.getElementById('balanceAmount').innerText = `$${userBalance.toFixed(2)}`;
         document.getElementById('profileUserName').innerText = currentUserName;
+    }
+
+    async function loginWithBackend(username, password) {
+        const response = await fetch('/api/user/login', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                username: username,
+                password: password
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || 'Login failed');
+        }
+
+        return await response.json();
     }
 
     function addOrderRecord(durationMin, cost, startTimeStr, endTimeStr) {
@@ -734,31 +755,61 @@
         setTimeout(() => map.invalidateSize(), 200);
     }
 
-    function afterLogin(username) {
-        currentUserName = username || "Rider";
+    function afterLogin(userData) {
+        currentUser = userData;
+        currentUserName = userData.username || "Rider";
+        userBalance = Number(userData.balance ?? 50.0);
+
         updateProfileUI();
+
         document.getElementById('loginPage').classList.remove('active');
         document.getElementById('homePage').classList.add('active');
         document.getElementById('bottomNav').style.display = 'flex';
+
         if(!map) initMap();
         else setTimeout(() => map.invalidateSize(), 100);
+
+        // Version 1: keep sample orders on frontend only.
+        // Version 2 will connect orders with backend database.
         if(ordersHistory.length === 0) {
-            ordersHistory.push({id:100, date:"Apr 10, 2025 14:20", duration:15, fee:8.5, startTime:"Teaching Building", endTime:"Dormitory Zone"});
-            ordersHistory.push({id:101, date:"Apr 9, 2025 08:45", duration:9, fee:5.5, startTime:"South Gate", endTime:"Library"});
+            ordersHistory.push({
+                id:100,
+                date:"Apr 10, 2025 14:20",
+                duration:15,
+                fee:8.5,
+                startTime:"Teaching Building",
+                endTime:"Dormitory Zone"
+            });
+            ordersHistory.push({
+                id:101,
+                date:"Apr 9, 2025 08:45",
+                duration:9,
+                fee:5.5,
+                startTime:"South Gate",
+                endTime:"Library"
+            });
             renderOrdersPage();
         }
+
         showToast(`Welcome, ${currentUserName}!`);
     }
 
     function bindEvents() {
-        document.getElementById('doLoginBtn').addEventListener('click', () => {
+        document.getElementById('doLoginBtn').addEventListener('click', async () => {
             const username = document.getElementById('loginUsername').value.trim();
-            const pwd = document.getElementById('loginPassword').value;
-            if(username === "") {
-                showToast("Please enter username/email");
+            const pwd = document.getElementById('loginPassword').value.trim();
+
+            if(username === "" || pwd === "") {
+                showToast("Please enter username and password");
                 return;
             }
-            afterLogin(username.split('@')[0] || "Guest");
+
+            try {
+                const result = await loginWithBackend(username, pwd);
+                afterLogin(result.user);
+            } catch (error) {
+                showToast(error.message);
+            }
         });
         document.querySelectorAll('.nav-item').forEach(item => {
             item.addEventListener('click', () => {
@@ -790,6 +841,12 @@
             document.getElementById('ridingPage').classList.remove('active');
             document.getElementById('ordersPage').classList.remove('active');
             document.getElementById('profilePage').classList.remove('active');
+            
+            currentUser = null;
+            currentUserName = "Guest";
+            userBalance = 50.0;
+            updateProfileUI();
+            
             showToast("Logged out successfully.");
         });
         document.getElementById('searchIcon')?.addEventListener('click', () => showToast("🔍 Search destination (demo)"));
