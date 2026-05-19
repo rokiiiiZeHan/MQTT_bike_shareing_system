@@ -5,10 +5,22 @@ from datetime import datetime
 
 import paho.mqtt.client as mqtt
 
-from database import fetch_all_bikes
+from database import fetch_all_bikes, init_db
 
 BROKER = "localhost"
 PORT = 1883
+
+# Bike home locations (campus activity centers)
+BIKE_HOME_POINTS = {
+    "B001": {"lat": 18.401208, "lon": 110.017819},
+    "B002": {"lat": 18.401708, "lon": 110.018319},
+    "B003": {"lat": 18.400708, "lon": 110.017319},
+}
+
+# Maximum allowed movement distance from home point
+MAX_DISTANCE = 0.0012
+
+init_db()
 
 client = mqtt.Client(client_id="ControlledBikePublisher", protocol=mqtt.MQTTv5)
 client.connect(BROKER, PORT)
@@ -20,18 +32,29 @@ print("=" * 70)
 
 
 def update_simulated_bike(bike):
-    """
-    Only unlocked bikes move and consume battery.
-    Locked bikes remain stationary and keep the same battery level.
-    """
     lat = float(bike["lat"])
     lon = float(bike["lon"])
     battery = int(bike["battery"])
     lock_state = bike["lock"]
 
+    home = BIKE_HOME_POINTS.get(bike["bike_id"])
+
+    # First, pull back any bike that is already too far away
+    if home:
+        if abs(lat - home["lat"]) > MAX_DISTANCE or abs(lon - home["lon"]) > MAX_DISTANCE:
+            lat = home["lat"] + random.uniform(-0.0002, 0.0002)
+            lon = home["lon"] + random.uniform(-0.0002, 0.0002)
+
+    # Only unlocked bikes move and consume battery
     if lock_state == "unlocked":
-        lat += random.uniform(-0.0003, 0.0003)
-        lon += random.uniform(-0.0003, 0.0003)
+        lat += random.uniform(-0.00008, 0.00008)
+        lon += random.uniform(-0.00008, 0.00008)
+
+        if home:
+            if abs(lat - home["lat"]) > MAX_DISTANCE or abs(lon - home["lon"]) > MAX_DISTANCE:
+                lat = home["lat"] + random.uniform(-0.0002, 0.0002)
+                lon = home["lon"] + random.uniform(-0.0002, 0.0002)
+
         battery = max(0, battery - random.randint(1, 2))
 
     return {

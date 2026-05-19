@@ -55,54 +55,82 @@ LEGAL_ZONES = [
     {
         "zone_id": "zone_1",
         "name": "Teaching Building Parking Zone",
-        "lat": 18.4235,
-        "lon": 110.0395,
+        "lat": 18.401208,
+        "lon": 110.017819,
         "radius_km": 0.06
     },
     {
         "zone_id": "zone_2",
         "name": "Dormitory Parking Zone",
-        "lat": 18.4248,
-        "lon": 110.0399,
+        "lat": 18.401708,
+        "lon": 110.018319,
         "radius_km": 0.05
     },
     {
         "zone_id": "zone_3",
         "name": "Canteen Parking Zone",
-        "lat": 18.4228,
-        "lon": 110.0405,
+        "lat": 18.400708,
+        "lon": 110.017319,
         "radius_km": 0.05
     },
 ]
 
-#Multi-vehicle status management
-bikes: Dict[str, dict] = {}##############################
+# Multi-vehicle status management
+bikes: Dict[str, dict] = {}  ##############################
 
 # Violation record
 violations: List[dict] = []
 
-
 loop = asyncio.get_event_loop()
+
 
 class UserLoginRequest(BaseModel):
     username: str
     password: str
+
 
 class StartRideRequest(BaseModel):
     user_id: int
     bike_id: str = "B001"
     pricing_mode: str = "pay_as_you_go"
 
+
 class EndRideRequest(BaseModel):
     user_id: int
 
 
-def calculate_pay_as_you_go_cost(duration_min: int) -> float:
+PRICING_PLANS = {
+    "pay_as_you_go": {
+        "name": "Pay-as-you-go",
+        "description": "First 10 minutes: $1.00, then $0.20 per extra minute",
+        "type": "time_based",
+    },
+    "day_pass": {
+        "name": "Day Pass",
+        "description": "$8.00 fixed package price",
+        "type": "package",
+        "price": 8.00,
+    },
+    "weekly_pass": {
+        "name": "Weekly Pass",
+        "description": "$35.00 fixed package price",
+        "type": "package",
+        "price": 35.00,
+    },
+}
+
+
+def calculate_ride_cost(duration_min: int, pricing_mode: str) -> float:
     """
-    Pay-as-you-go pricing:
-    First 10 minutes: $1.00
-    After 10 minutes: $0.20 per extra minute.
+    Calculate ride cost based on selected pricing mode.
     """
+    if pricing_mode == "day_pass":
+        return 8.00
+
+    if pricing_mode == "weekly_pass":
+        return 35.00
+
+    # Default: pay-as-you-go
     base_price = 1.00
     included_minutes = 10
     extra_rate_per_minute = 0.20
@@ -127,13 +155,14 @@ def haversine(lat1, lon1, lat2, lon2):
     dlat = math.radians(lat2 - lat1)
     dlon = math.radians(lon2 - lon1)
     a = (
-        math.sin(dlat / 2) ** 2
-        + math.cos(math.radians(lat1))
-        * math.cos(math.radians(lat2))
-        * math.sin(dlon / 2) ** 2
+            math.sin(dlat / 2) ** 2
+            + math.cos(math.radians(lat1))
+            * math.cos(math.radians(lat2))
+            * math.sin(dlon / 2) ** 2
     )
     c = 2 * math.asin(math.sqrt(a))
     return R * c
+
 
 def check_legal_parking(lat, lon):
     """Check whether the vehicle is in a legal parking area"""
@@ -248,8 +277,8 @@ def on_message(client, userdata, msg):
         if bike_id not in bikes:
             bikes[bike_id] = {
                 "bike_id": bike_id,
-                "lat": 18.402239,
-                "lon": 110.014757,
+                "lat": 18.401208,
+                "lon": 110.017819,
                 "status": "safe",
                 "battery": 100,
                 "lock": "locked",
@@ -276,7 +305,8 @@ def on_message(client, userdata, msg):
             # Check for violations
             check_violation(bike_id)
 
-            print(f"[MQTT] Bike {bike_id} - Location: ({bikes[bike_id]['lat']:.6f}, {bikes[bike_id]['lon']:.6f}) - Status: {bikes[bike_id]['status']} - Zone: {zone_name}")
+            print(
+                f"[MQTT] Bike {bike_id} - Location: ({bikes[bike_id]['lat']:.6f}, {bikes[bike_id]['lon']:.6f}) - Status: {bikes[bike_id]['status']} - Zone: {zone_name}")
 
         elif message_type == "battery":
             bikes[bike_id]["battery"] = payload.get("battery", bikes[bike_id]["battery"])
@@ -288,7 +318,7 @@ def on_message(client, userdata, msg):
             bikes[bike_id]["lock"] = payload.get("lock_state", bikes[bike_id]["lock"])
             print(f"[MQTT] Bike {bike_id} - Lock: {bikes[bike_id]['lock']}")
 
-        bikes[bike_id]["last_update"] = datetime.now().isoformat()#################
+        bikes[bike_id]["last_update"] = datetime.now().isoformat()  #################
 
         upsert_bike(
             {
@@ -319,8 +349,8 @@ def on_message(client, userdata, msg):
 
         if bikes[bike_id].get("violation_start_time") and bikes[bike_id]["status"] == "out_of_zone":
             violation_duration = (
-                datetime.now() - bikes[bike_id]["violation_start_time"]
-            ).seconds / 60
+                                         datetime.now() - bikes[bike_id]["violation_start_time"]
+                                 ).seconds / 60
             if violation_duration >= 5:
                 asyncio.run_coroutine_threadsafe(
                     sio.emit("violation_alert", {
@@ -378,16 +408,28 @@ async def get_user(user_id: int):
     return {"user": user}
 
 
-# 2. 骑行和计费相关
+# 2. 计费方式相关
+# 在用户开始骑行之前提供价格计算方式的选择
+
+@app.get("/api/pricing/plans")
+async def get_pricing_plans():
+    """Return available pricing plans for the user app."""
+    return {"plans": PRICING_PLANS}
+
+
+# 3. 骑行和计费相关
 @app.post("/api/ride/start")
 async def start_ride(data: StartRideRequest):
     """
     Start a ride for a user.
-    Version 2 uses pay-as-you-go pricing only.
+    Version 3 supports multiple pricing modes.
     """
     user = fetch_user_by_id(data.user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+
+    if data.pricing_mode not in PRICING_PLANS:
+        raise HTTPException(status_code=400, detail="Invalid pricing mode")
 
     active_ride = fetch_active_ride(data.user_id)
     if active_ride:
@@ -401,12 +443,12 @@ async def start_ride(data: StartRideRequest):
         upsert_bike(
             {
                 "bike_id": data.bike_id,
-                "lat": 18.4235,
-                "lon": 110.0395,
+                "lat": 18.401208,
+                "lon": 110.017819,
                 "status": "safe",
                 "battery": 100,
                 "lock": "locked",
-                "current_zone": "Lingshui Campus",
+                "current_zone": "Teaching Building Parking Zone",
                 "last_update": datetime.utcnow().isoformat(),
             }
         )
@@ -443,6 +485,7 @@ async def end_ride(data: EndRideRequest):
     deduct user balance, and store order record.
     """
     user = fetch_user_by_id(data.user_id)
+
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -455,7 +498,10 @@ async def end_ride(data: EndRideRequest):
 
     duration_min = max(1, int((end_time - start_time).total_seconds() // 60))
 
-    ride_cost = calculate_pay_as_you_go_cost(duration_min)
+    ride_cost = calculate_ride_cost(
+        duration_min=duration_min,
+        pricing_mode=active_ride["pricing_mode"],
+    )
 
     bike = fetch_bike_by_id(active_ride["bike_id"])
     relocation_fee = 0.0
@@ -468,7 +514,11 @@ async def end_ride(data: EndRideRequest):
     cost = round(ride_cost + relocation_fee, 2)
 
     if user["balance"] < cost:
-        raise HTTPException(status_code=400, detail="Insufficient balance")
+        update_bike_lock(active_ride["bike_id"], "locked")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Insufficient balance. Required: ${cost:.2f}, current balance: ${user['balance']:.2f}. Bike has been locked."
+        )
 
     new_balance = round(user["balance"] - cost, 2)
 
@@ -502,7 +552,7 @@ async def get_user_orders(user_id: int):
     return {"orders": fetch_rides_by_user(user_id)}
 
 
-# 3. 页面路由
+# 4. 页面路由
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
@@ -513,7 +563,7 @@ async def user_app(request: Request):
     return templates.TemplateResponse("user.html", {"request": request})
 
 
-# 4. 管理员路由
+# 5. 管理员路由
 @app.get("/admin/login", response_class=HTMLResponse)
 async def admin_login(request: Request):
     return templates.TemplateResponse(
@@ -524,9 +574,9 @@ async def admin_login(request: Request):
 
 @app.post("/admin/login", response_class=HTMLResponse)
 async def admin_login_submit(
-    request: Request,
-    username: str = Form(...),
-    password: str = Form(...),
+        request: Request,
+        username: str = Form(...),
+        password: str = Form(...),
 ):
     if not verify_admin_credentials(username, password):
         return templates.TemplateResponse(
@@ -560,19 +610,24 @@ async def admin_logout(request: Request):
     return RedirectResponse(url="/admin/login", status_code=303)
 
 
-# 5. 原来的车辆/违规/区域 API
+# 6. 原来的车辆/违规/区域 API
 @app.get("/api/bikes")
 async def get_all_bikes():
     """Get all bicycle statuses"""
     return {"bikes": fetch_all_bikes()}
+
+
 @app.get("/api/violations")
 async def get_violations():
     """Get violation records"""
     return {"violations": fetch_recent_violations(50)}
+
+
 @app.get("/api/zones")
 async def get_zones():
     """Obtain legal parking areas"""
     return {"zones": LEGAL_ZONES}
+
 
 # === Initialize Database ===
 init_db()

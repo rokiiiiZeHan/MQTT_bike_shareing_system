@@ -2,7 +2,6 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-
 DB_PATH = Path(__file__).resolve().parent / "bike_tracker.db"
 
 
@@ -109,8 +108,8 @@ def init_db():
         default_bikes = [
             {
                 "bike_id": "B001",
-                "lat": 18.4235,
-                "lon": 110.0395,
+                "lat": 18.401208,
+                "lon": 110.017819,
                 "status": "safe",
                 "battery": 100,
                 "lock": "locked",
@@ -119,8 +118,8 @@ def init_db():
             },
             {
                 "bike_id": "B002",
-                "lat": 18.4248,
-                "lon": 110.0399,
+                "lat": 18.401708,
+                "lon": 110.018319,
                 "status": "safe",
                 "battery": 100,
                 "lock": "locked",
@@ -129,8 +128,8 @@ def init_db():
             },
             {
                 "bike_id": "B003",
-                "lat": 18.4228,
-                "lon": 110.0405,
+                "lat": 18.400708,
+                "lon": 110.017319,
                 "status": "safe",
                 "battery": 100,
                 "lock": "locked",
@@ -142,11 +141,11 @@ def init_db():
         for bike in default_bikes:
             cursor.execute(
                 """
-                INSERT OR IGNORE INTO bikes (
+                INSERT INTO bikes (
                     bike_id, lat, lon, status, battery, lock, current_zone, last_update
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                
+
                 ON CONFLICT(bike_id) DO UPDATE SET
                     lat = excluded.lat,
                     lon = excluded.lon,
@@ -403,6 +402,7 @@ def update_bike_state(bike_id: str, lat: float, lon: float, status: str,
         )
         connection.commit()
 
+
 def create_ride(user_id: int, bike_id: str, pricing_mode: str = "pay_as_you_go"):
     """Create a new ride record when the user starts riding."""
     with get_connection() as connection:
@@ -496,6 +496,7 @@ def fetch_rides_by_user(user_id: int):
         ).fetchall()
 
     return [_row_to_dict(row) for row in rows]
+
 
 if __name__ == "__main__":
     init_db()

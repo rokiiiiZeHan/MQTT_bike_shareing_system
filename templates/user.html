@@ -387,6 +387,43 @@
             box-shadow: 0 4px 12px rgba(255, 59, 48, 0.3);
         }
 
+        /* Pricing Page */
+        .pricing-panel {
+            padding: 24px 20px 90px;
+        }
+
+        .pricing-card {
+            background: white;
+            border: 2px solid #e5e7eb;
+            border-radius: 24px;
+            padding: 18px;
+            margin-bottom: 16px;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .pricing-card h3 {
+            font-size: 20px;
+            color: #1a2e1f;
+            margin-bottom: 8px;
+        }
+
+        .pricing-card p {
+            font-size: 14px;
+            color: #6b7280;
+            margin: 4px 0;
+        }
+
+        .pricing-card.selected {
+            border-color: #07c160;
+            background: #f0fff6;
+        }
+
+        .pricing-card:active {
+            transform: scale(0.98);
+        }
+
         /* Orders */
         .order-list {
             padding: 16px;
@@ -516,7 +553,7 @@
         <div class="action-cards">
             <div class="card-item" id="scanBtnHome">
                 <i class="fas fa-qrcode"></i>
-                <span>Scan</span>
+                <span>Unlock</span>
             </div>
             <div class="card-item" id="reserveBtn">
                 <i class="fas fa-calendar-check"></i>
@@ -532,7 +569,7 @@
     <div id="scanPage" class="page">
         <div class="header" style="background: #000; color: white; border: none;">
             <i class="fas fa-arrow-left" style="font-size: 24px; cursor: pointer;" id="backFromScan"></i>
-            <span style="font-weight: 500;">Scan QR Code</span>
+            <span style="font-weight: 500;">Scan or Enter Bike ID</span>
             <div style="width: 24px;"></div>
         </div>
         <div class="scanner-container">
@@ -542,15 +579,47 @@
                 </div>
             </div>
             <div class="mock-tip">
-                <i class="fas fa-camera"></i> Tap to scan & unlock
+                <i class="fas fa-camera"></i> Tap to confirm bike ID
             </div>
             <div class="scan-control-panel">
                 <input type="text" id="bikeIdInput" class="input-field" value="B001"
                     placeholder="Enter Bike ID, e.g., B001" style="text-align: center;">
                 <button class="login-btn" id="unlockBikeBtn">
-                    Unlock Selected Bike
+                    Continue
                 </button>
             </div>
+        </div>
+    </div>
+
+    <div id="pricingPage" class="page">
+        <div class="header">
+            <i class="fas fa-arrow-left" style="font-size: 24px; cursor: pointer;" id="backFromPricing"></i>
+            <span>Choose Pricing Plan</span>
+            <div style="width: 24px;"></div>
+        </div>
+
+        <div class="pricing-panel">
+            <div class="pricing-card selected" data-plan="pay_as_you_go">
+                <h3>Pay-as-you-go</h3>
+                <p>First 10 minutes: $1.00</p>
+                <p>After 10 minutes: $0.20 / extra min</p>
+            </div>
+
+            <div class="pricing-card" data-plan="day_pass">
+                <h3>Day Pass</h3>
+                <p>$8.00 fixed package price</p>
+                <p>Best for longer daily use</p>
+            </div>
+
+            <div class="pricing-card" data-plan="weekly_pass">
+                <h3>Weekly Pass</h3>
+                <p>$35.00 fixed package price</p>
+                <p>Best for frequent users</p>
+            </div>
+
+            <button class="login-btn" id="confirmPricingBtn">
+                Start Ride
+            </button>
         </div>
     </div>
 
@@ -564,10 +633,14 @@
             <i class="fas fa-bicycle" style="font-size: 48px; color: #07c160;"></i>
             <div class="timer" id="rideTimer">00:00</div>
             <div class="cost" id="rideCost">$0.00</div>
+            <div id="ridePricingMode" style="font-size: 14px; color: #666; margin-bottom: 20px;">
+                Pricing: Pay-as-you-go
+            </div>
             <button class="lock-btn" id="endRideBtn"><i class="fas fa-lock"></i> End Ride / Lock</button>
             <p id="currentBikeLabel" style="margin-top: 20px; font-size: 12px; color: gray;">
                 Bike: B001 · Lingshui Campus
             </p>
+
         </div>
     </div>
 
@@ -614,7 +687,6 @@
 
     <div class="bottom-nav" id="bottomNav" style="display: none;">
         <div class="nav-item" data-page="home"><i class="fas fa-map-marked-alt"></i><span>Home</span></div>
-        <div class="nav-item" data-page="scan"><i class="fas fa-qrcode"></i><span>Scan</span></div>
         <div class="nav-item" data-page="riding"><i class="fas fa-biking"></i><span>Ride</span></div>
         <div class="nav-item" data-page="orders"><i class="fas fa-history"></i><span>Orders</span></div>
         <div class="nav-item" data-page="profile"><i class="fas fa-user"></i><span>Me</span></div>
@@ -640,15 +712,15 @@
         let markers = [];
 
         // Hainan Lingshui - CUC coordinates
-        const CAMPUS_CENTER = [18.4235, 110.0395];
+        const CAMPUS_CENTER = [18.401208, 110.017819];
         const mockBikePositions = [
-            { lng: 110.0382, lat: 18.4240, name: 'Teaching Bldg East' },
-            { lng: 110.0405, lat: 18.4228, name: 'Canteen' },
-            { lng: 110.0399, lat: 18.4248, name: 'Dorm Area' },
-            { lng: 110.0378, lat: 18.4225, name: 'Stadium' },
-            { lng: 110.0412, lat: 18.4239, name: 'Intl Center' },
-            { lng: 110.0388, lat: 18.4255, name: 'North Gate' },
-            { lng: 110.0400, lat: 18.4215, name: 'South Gate' }
+            { lng: 110.017819, lat: 18.401208, name: 'Teaching Building East' },
+            { lng: 110.018319, lat: 18.401708, name: 'Dorm Area' },
+            { lng: 110.017319, lat: 18.400708, name: 'Canteen' },
+            { lng: 110.018000, lat: 18.401500, name: 'Stadium' },
+            { lng: 110.017500, lat: 18.401000, name: 'Intl Center' },
+            { lng: 110.017000, lat: 18.401800, name: 'North Gate' },
+            { lng: 110.018500, lat: 18.400900, name: 'South Gate' }
         ];
 
         function showToast(msg, duration = 2000) {
@@ -662,12 +734,46 @@
         }
 
         function calculateEstimatedCost(minutes) {
+            if (currentRide.pricingMode === "day_pass") {
+                return 8.00;
+            }
+
+            if (currentRide.pricingMode === "weekly_pass") {
+                return 35.00;
+            }
+
             const basePrice = 1.00;
             const includedMinutes = 10;
             const extraRatePerMinute = 0.20;
 
             const extraMinutes = Math.max(0, minutes - includedMinutes);
             return basePrice + extraMinutes * extraRatePerMinute;
+        }
+
+        function formatPricingMode(mode) {
+            if (mode === "day_pass") return "Day Pass";
+            if (mode === "weekly_pass") return "Weekly Pass";
+            return "Pay-as-you-go";
+        }
+
+
+        function selectPricingPlan(plan) {
+            currentRide.pricingMode = plan;
+
+            document.querySelectorAll('.pricing-card').forEach(card => {
+                if (card.getAttribute('data-plan') === plan) {
+                    card.classList.add('selected');
+                } else {
+                    card.classList.remove('selected');
+                }
+            });
+
+            showToast(`Selected: ${formatPricingMode(plan)}`);
+        }
+
+
+        function confirmPricingAndStartRide() {
+            startRiding();
         }
 
         function updateProfileUI() {
@@ -794,7 +900,7 @@
         <div class="order-item">
             <div class="order-time">${order.date}</div>
             <div>Bike: ${order.bikeId || 'B001'}</div>
-            <div>Pricing: ${order.pricingMode || 'pay_as_you_go'}</div>
+            <div>Pricing: ${formatPricingMode(order.pricingMode)}</div>
             <div>Duration: ${order.duration} min  |  Fare: $${order.fee.toFixed(2)}</div>
             <div class="order-detail">
                 <span>${order.startTime ? new Date(order.startTime).toLocaleTimeString() : 'Start'}</span>
@@ -824,6 +930,7 @@
                 currentRide.active = false;
                 currentRide.rideId = null;
                 currentRide.startTime = null;
+                currentRide.pricingMode = "pay_as_you_go";
 
                 document.getElementById('rideTimer').innerText = "00:00";
                 document.getElementById('rideCost').innerText = "$0.00";
@@ -858,6 +965,9 @@
 
                 document.getElementById('currentBikeLabel').innerText =
                     `Bike: ${currentRide.bikeId} · Lingshui Campus`;
+
+                document.getElementById('ridePricingMode').innerText =
+                    `Pricing: ${formatPricingMode(currentRide.pricingMode)}`;
 
                 const timerEl = document.getElementById('rideTimer');
                 const costEl = document.getElementById('rideCost');
@@ -901,16 +1011,26 @@
             }
 
             currentRide.bikeId = bikeId;
-            startRiding();
+            currentRide.pricingMode = "pay_as_you_go";
+
+            switchToPage('pricingPage');
         }
+
         function mockReserveBike() { showToast("🚲 Bike reserved nearby. Scan within 15 min."); }
         function mockRepair() { showToast("🔧 Report submitted. Thank you!"); }
 
         function switchToPage(pageId) {
-            const pages = ['homePage', 'scanPage', 'ridingPage', 'ordersPage', 'profilePage'];
+            const pages = ['homePage', 'scanPage', 'pricingPage', 'ridingPage', 'ordersPage', 'profilePage'];
             pages.forEach(pid => document.getElementById(pid).classList.remove('active'));
             document.getElementById(pageId).classList.add('active');
-            const navMap = { homePage: 'home', scanPage: 'scan', ridingPage: 'riding', ordersPage: 'orders', profilePage: 'profile' };
+            const navMap = {
+                homePage: 'home',
+                scanPage: 'home',
+                pricingPage: 'home',
+                ridingPage: 'riding',
+                ordersPage: 'orders',
+                profilePage: 'profile'
+            };
             const activeNav = navMap[pageId];
             document.querySelectorAll('.nav-item').forEach(item => {
                 if (item.getAttribute('data-page') === activeNav) item.classList.add('active');
@@ -987,19 +1107,34 @@
                 item.addEventListener('click', () => {
                     const page = item.getAttribute('data-page');
                     if (page === 'home') switchToPage('homePage');
-                    else if (page === 'scan') switchToPage('scanPage');
                     else if (page === 'riding') switchToPage('ridingPage');
                     else if (page === 'orders') switchToPage('ordersPage');
                     else if (page === 'profile') switchToPage('profilePage');
                 });
             });
-            document.getElementById('scanBtnHome')?.addEventListener('click', () => switchToPage('scanPage'));
+            document.getElementById('scanBtnHome')?.addEventListener('click', () => {
+                if (currentRide.active) {
+                    showToast("End current ride first.");
+                    return;
+                }
+                switchToPage('scanPage');
+            });
             document.getElementById('reserveBtn')?.addEventListener('click', mockReserveBike);
             document.getElementById('reportBtn')?.addEventListener('click', mockRepair);
             document.querySelector('.scan-area')?.addEventListener('click', () => {
                 mockScanToUnlock();
             });
             document.getElementById('unlockBikeBtn')?.addEventListener('click', mockScanToUnlock);
+            document.querySelectorAll('.pricing-card').forEach(card => {
+                card.addEventListener('click', () => {
+                    const plan = card.getAttribute('data-plan');
+                    selectPricingPlan(plan);
+                });
+            });
+
+            document.getElementById('confirmPricingBtn')?.addEventListener('click', confirmPricingAndStartRide);
+
+            document.getElementById('backFromPricing')?.addEventListener('click', () => switchToPage('scanPage'));
             document.getElementById('backFromScan')?.addEventListener('click', () => switchToPage('homePage'));
             document.getElementById('backFromRiding')?.addEventListener('click', () => switchToPage('homePage'));
             document.getElementById('backFromOrders')?.addEventListener('click', () => switchToPage('homePage'));
@@ -1013,6 +1148,7 @@
                 document.getElementById('loginPage').classList.add('active');
                 document.getElementById('homePage').classList.remove('active');
                 document.getElementById('scanPage').classList.remove('active');
+                document.getElementById('pricingPage').classList.remove('active');
                 document.getElementById('ridingPage').classList.remove('active');
                 document.getElementById('ordersPage').classList.remove('active');
                 document.getElementById('profilePage').classList.remove('active');
